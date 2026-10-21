@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Authenticated, AuthLoading, Unauthenticated, useAction, useQuery } from "convex/react";
-import { SignOutButton, UserButton, useUser } from "@clerk/nextjs";
+import { SignOutButton, UserButton, useAuth, useUser } from "@clerk/nextjs";
 import { api } from "@/convex/_generated/api";
 import { AppContext, useApp, type AppState } from "./AppContext";
 
@@ -15,17 +15,46 @@ export default function Shell({ children }: { children: React.ReactNode }) {
         <Splash text="Opening Dispatch" />
       </AuthLoading>
       <Unauthenticated>
-        <div className="center-screen">
-          <div className="gate">
-            <p className="h2">You&apos;re signed out</p>
-            <Link className="btn" href="/sign-in">Sign in</Link>
-          </div>
-        </div>
+        <SignedOutOrMismatch />
       </Unauthenticated>
       <Authenticated>
         <Gate>{children}</Gate>
       </Authenticated>
     </>
+  );
+}
+
+/** Clerk may say "signed in" while the database rejects the login pass. Explain instead of looping. */
+function SignedOutOrMismatch() {
+  const { isLoaded, isSignedIn } = useAuth();
+  if (!isLoaded) return <Splash text="Opening Dispatch" />;
+  if (!isSignedIn) {
+    return (
+      <div className="center-screen">
+        <div className="gate">
+          <p className="h2">You&apos;re signed out</p>
+          <Link className="btn" href="/sign-in">Sign in</Link>
+        </div>
+      </div>
+    );
+  }
+  return (
+    <div className="center-screen">
+      <div className="gate">
+        <div className="mark-word">Dispatch</div>
+        <p className="h2">Signed in, but the database didn&apos;t accept it</p>
+        <p className="muted">
+          Clerk signed you in, but Convex rejected the login pass. In Clerk, check the Convex integration is active.
+          In Convex Production, check CLERK_JWT_ISSUER_DOMAIN matches this Clerk app&apos;s Frontend API URL exactly.
+        </p>
+        <div className="row">
+          <SignOutButton>
+            <button className="btn quiet">Sign out</button>
+          </SignOutButton>
+          <button className="btn" onClick={() => window.location.reload()}>Try again</button>
+        </div>
+      </div>
+    </div>
   );
 }
 

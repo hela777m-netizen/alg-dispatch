@@ -28,7 +28,13 @@ async function callClaude(body: Record<string, unknown>) {
     console.error("Claude API error", res.status, detail.slice(0, 500));
     if (res.status === 401) throw new ConvexError("The Claude API key was rejected. Check ANTHROPIC_API_KEY in Convex.");
     if (res.status === 429) throw new ConvexError("Too many requests right now. Try again in a minute.");
-    throw new ConvexError("Couldn't reach Claude. Try again.");
+    let reason = "";
+    try {
+      reason = (JSON.parse(detail) as { error?: { message?: string } }).error?.message ?? "";
+    } catch { /* not JSON */ }
+    if (/credit balance/i.test(reason)) throw new ConvexError("The Claude account has no credit. Add credit at console.anthropic.com > Billing.");
+    if (res.status === 404) throw new ConvexError(`Claude model not found (${MODEL()}). Set ANTHROPIC_MODEL in Convex to a current model.`);
+    throw new ConvexError(`Couldn't reach Claude (${res.status}${reason ? `: ${reason.slice(0, 160)}` : ""}).`);
   }
   return (await res.json()) as { content: { type: string; text?: string; input?: unknown }[] };
 }

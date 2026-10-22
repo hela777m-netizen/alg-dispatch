@@ -7,6 +7,7 @@ import { Authenticated, AuthLoading, Unauthenticated, useAction, useQuery } from
 import { SignOutButton, UserButton, useAuth, useUser } from "@clerk/nextjs";
 import { api } from "@/convex/_generated/api";
 import { AppContext, useApp, type AppState } from "./AppContext";
+import Logo from "./Logo";
 
 export default function Shell({ children }: { children: React.ReactNode }) {
   return (
@@ -208,8 +209,8 @@ function Rail() {
   return (
     <aside className="rail">
       <Link href="/" className="mark">
-        <span className="mark-word">Reporting<br />Dashboard</span>
-        <span className="mark-sub">Al Liwan Group</span>
+        <Logo height={46} />
+        <span className="mark-word" style={{ marginTop: 18 }}>Reporting<br />Dashboard</span>
       </Link>
       <nav className="nav" aria-label="Main">
         <NavLinks variant="rail" />

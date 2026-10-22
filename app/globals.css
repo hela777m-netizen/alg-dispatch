@@ -7,9 +7,9 @@
   --ink-2: #4c5a54;
   --ink-3: #7d8a84;
   --line: #d3dbd6;
-  --lapis: #2643c4;
+  --lapis: #0b3b80;
   --lapis-ink: #ffffff;
-  --lapis-soft: #e2e7fb;
+  --lapis-soft: #dfe6f2;
   --ok: #237a52;
   --ok-soft: #dcefe4;
   --wait: #a86a0b;
@@ -17,7 +17,7 @@
   --alert: #b8304a;
   --alert-soft: #f6dfe4;
 
-  --k-activity: #2643c4;
+  --k-activity: #0b3b80;
   --k-meeting: #127a86;
   --k-deal: #6b3fb8;
   --k-blocker: #b8304a;
@@ -29,8 +29,8 @@
 
   --map-land: #d9e0db;
   --map-border: #eef1ee;
-  --map-ours: #c7d0f3;
-  --map-ours-strong: #a9b7ee;
+  --map-ours: #c3cfe4;
+  --map-ours-strong: #a3b5d6;
 
   --r-panel: 18px;
   --r-field: 10px;
@@ -100,6 +100,7 @@ button, input, textarea, select { font: inherit; color: inherit; }
   font-variation-settings: "wdth" 78, "opsz" 72;
   font-weight: 700; font-size: 30px; line-height: 0.92; letter-spacing: -0.01em;
 }
+.mark .mark-word { display: block; }
 .mark-sub { display: block; margin-top: 6px; font-size: 13px; color: var(--ink-3); }
 .nav { display: flex; flex-direction: column; gap: 2px; }
 .nav a {

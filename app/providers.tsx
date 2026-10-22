@@ -24,7 +24,7 @@ export default function Providers({ children }: { children: React.ReactNode }) {
     <ClerkProvider
       appearance={{
         variables: {
-          colorPrimary: "#2643c4",
+          colorPrimary: "#0b3b80",
           borderRadius: "10px",
           fontFamily: '"Hanken Grotesk Variable", system-ui, sans-serif',
         },

@@ -97,6 +97,7 @@ export const structure = action({
       `Today is ${me.today}. The speaker is ${me.name}.`,
       `Allowed geography keys: ${geoList}. If the speaker doesn't name a geography, use "${defaultGeography}".`,
       "Split distinct items into separate entries. Merge repeats. Keep the speaker's facts exactly; drop small talk.",
+      "Always answer by calling the record_entries tool exactly once. Do not reply with plain text.",
       "The input may be in English, Arabic or French. Always write the entries in English.",
       STYLE,
     ].join("\n");
@@ -105,11 +106,21 @@ export const structure = action({
       max_tokens: 4000,
       system,
       tools: [{ name: "record_entries", description: "Record the structured entries.", input_schema: ENTRY_SCHEMA }],
-      tool_choice: { type: "tool", name: "record_entries" },
+      tool_choice: { type: "auto" },
       messages: [{ role: "user", content: input }],
     });
     const call = result.content.find((c) => c.type === "tool_use");
-    const parsed = (call?.input as { entries?: unknown[] } | undefined)?.entries ?? [];
+    let parsed = (call?.input as { entries?: unknown[] } | undefined)?.entries ?? [];
+    if (!call) {
+      // Fallback: the model answered in text; pull out a JSON object if there is one.
+      const text = result.content.filter((c) => c.type === "text").map((c) => c.text ?? "").join("\n");
+      const match = text.match(/\{[\s\S]*\}/);
+      if (match) {
+        try {
+          parsed = (JSON.parse(match[0]) as { entries?: unknown[] }).entries ?? [];
+        } catch { /* leave empty */ }
+      }
+    }
     const allowed = new Set(me.geographies.map((g) => g.key));
     const kinds = new Set(["activity", "meeting", "deal", "blocker", "ask", "next"]);
     const stages = new Set(["lead", "engaged", "diligence", "terms", "closing", "closed", "lost"]);

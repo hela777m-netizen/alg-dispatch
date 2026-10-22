@@ -209,7 +209,15 @@ function MemberEditor({ draft, onClose }: { draft: MemberDraft; onClose: () => v
   );
 }
 
-type GeoDraft = { id?: Id<"geographies">; name: string; region: string; timezone: string; active: boolean };
+type GeoDraft = { id?: Id<"geographies">; name: string; region: string; timezone: string; position: string; active: boolean };
+
+function parsePosition(text: string): { lat?: number; lng?: number } | null {
+  const t = text.trim();
+  if (!t) return {};
+  const m = t.match(/^(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)$/);
+  if (!m) return null;
+  return { lat: Number(m[1]), lng: Number(m[2]) };
+}
 
 function Geographies() {
   const geos = useQuery(api.members.allGeographies);
@@ -218,7 +226,7 @@ function Geographies() {
     <section className="section">
       <div className="section-head">
         <h2 className="h2">Geographies</h2>
-        <button className="btn sm quiet" onClick={() => setEditing({ name: "", region: "", timezone: "Asia/Dubai", active: true })}>Add geography</button>
+        <button className="btn sm quiet" onClick={() => setEditing({ name: "", region: "", timezone: "Asia/Dubai", position: "", active: true })}>Add geography</button>
       </div>
       {editing && !editing.id && <GeoEditor draft={editing} onClose={() => setEditing(null)} />}
       <div className="panel">
@@ -234,7 +242,7 @@ function Geographies() {
                   <div className="title">{g.name}</div>
                   <div className="small faint">{g.region}, {g.timezone}{g.active ? "" : ", hidden"}</div>
                 </div>
-                <button className="btn quiet sm" onClick={() => setEditing({ id: g._id, name: g.name, region: g.region, timezone: g.timezone, active: g.active })}>Edit</button>
+                <button className="btn quiet sm" onClick={() => setEditing({ id: g._id, name: g.name, region: g.region, timezone: g.timezone, position: g.lat !== undefined && g.lng !== undefined ? `${g.lat}, ${g.lng}` : "", active: g.active })}>Edit</button>
               </div>
             ),
           )}
@@ -255,7 +263,9 @@ function GeoEditor({ draft, onClose }: { draft: GeoDraft; onClose: () => void })
         <label className="field"><span>Name</span><input className="input" value={d.name} onChange={(e) => setD({ ...d, name: e.target.value })} /></label>
         <label className="field"><span>City or region</span><input className="input" value={d.region} onChange={(e) => setD({ ...d, region: e.target.value })} /></label>
         <label className="field"><span>Time zone</span><input className="input" value={d.timezone} placeholder="Africa/Lagos" onChange={(e) => setD({ ...d, timezone: e.target.value })} /></label>
+        <label className="field"><span>Map position</span><input className="input" value={d.position} placeholder="6.52, 3.38" onChange={(e) => setD({ ...d, position: e.target.value })} /></label>
       </div>
+      <p className="small faint" style={{ margin: 0 }}>For the map: in Google Maps, right-click the city and click the numbers at the top to copy them, then paste here.</p>
       <label className="row small">
         <input type="checkbox" checked={d.active} onChange={(e) => setD({ ...d, active: e.target.checked })} />
         Show on the dashboard
@@ -267,8 +277,10 @@ function GeoEditor({ draft, onClose }: { draft: GeoDraft; onClose: () => void })
           className="btn sm"
           onClick={async () => {
             setErr(null);
+            const pos = parsePosition(d.position);
+            if (pos === null) return setErr("Map position should look like 6.52, 3.38");
             try {
-              await save(d);
+              await save({ id: d.id, name: d.name, region: d.region, timezone: d.timezone, active: d.active, ...pos });
               toast(d.id ? "Geography updated" : "Geography added");
               onClose();
             } catch (e) {

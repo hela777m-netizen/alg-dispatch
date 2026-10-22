@@ -5,7 +5,7 @@ export default function SignInPage() {
     <main className="signin">
       <section className="signin-art">
         <div>
-          <div className="mark-word">Dispatch</div>
+          <div className="mark-word">Reporting<br />Dashboard</div>
           <p className="muted" style={{ color: "inherit", opacity: 0.7, marginTop: 14 }}>
             Al Liwan Group
           </p>

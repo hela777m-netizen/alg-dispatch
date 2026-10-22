@@ -8,6 +8,7 @@ import { api } from "@/convex/_generated/api";
 import { useApp } from "@/components/AppContext";
 import CycleRibbon from "@/components/CycleRibbon";
 import EntryList from "@/components/EntryList";
+import WorldMap from "@/components/WorldMap";
 import { Empty, KindMark, Mix, Spark, StageTrack, Status } from "@/components/bits";
 import { useClock } from "@/lib/useClock";
 import { localTime, money, moneyShort, shortDate, STAGE_LABEL } from "@/lib/format";
@@ -38,6 +39,21 @@ function Overview() {
   const data = useQuery(api.dashboard.overview, { cycle });
   const entries = useQuery(api.entries.forCycle, { cycle });
   const now = useClock();
+  const [view, setView] = useState<"map" | "list">("map");
+  const [selected, setSelected] = useState<string | null>(null);
+
+  // Remember the viewer's choice; phones default to the list.
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem("overview-view");
+      if (saved === "map" || saved === "list") return setView(saved);
+    } catch { /* storage blocked */ }
+    if (window.matchMedia("(max-width: 640px)").matches) setView("list");
+  }, []);
+  const chooseView = (v: "map" | "list") => {
+    setView(v);
+    try { localStorage.setItem("overview-view", v); } catch { /* storage blocked */ }
+  };
 
   return (
     <>
@@ -58,9 +74,23 @@ function Overview() {
       <section className="section">
         <div className="section-head">
           <h2 className="h2">Geographies</h2>
-          <span className="small faint">Last six cycles of activity</span>
+          <div className="segmented" role="group" aria-label="Geographies view">
+            <button aria-pressed={view === "map"} onClick={() => chooseView("map")}>Map</button>
+            <button aria-pressed={view === "list"} onClick={() => chooseView("list")}>List</button>
+          </div>
         </div>
-        <div className="panel flush board">
+        {view === "map" && data && (
+          <WorldMap
+            geos={data.byGeo}
+            roster={data.roster}
+            entries={entries}
+            pipeline={data.pipeline}
+            selected={selected}
+            onSelect={setSelected}
+            now={now}
+          />
+        )}
+        {view === "list" && <div className="panel flush board">
           {data === undefined && <p className="faint" style={{ padding: 20 }}>Loading</p>}
           {data?.byGeo.map((g) => {
             const who = data.roster.filter((r) => r.geography === g.key);
@@ -92,7 +122,8 @@ function Overview() {
               </Link>
             );
           })}
-        </div>
+        </div>}
+        {data === undefined && view === "map" && <p className="faint">Loading</p>}
       </section>
 
       <div className="section grid-2">

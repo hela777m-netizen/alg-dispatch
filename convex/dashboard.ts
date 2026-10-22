@@ -37,6 +37,8 @@ export const overview = query({
         name: g.name,
         region: g.region,
         timezone: g.timezone,
+        lat: g.lat,
+        lng: g.lng,
         total: rows.length,
         counts,
         trend,

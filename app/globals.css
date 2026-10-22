@@ -89,7 +89,7 @@ button, input, textarea, select { font: inherit; color: inherit; }
 .mark-word {
   font-family: var(--display);
   font-variation-settings: "wdth" 78, "opsz" 72;
-  font-weight: 700; font-size: 34px; line-height: 0.9; letter-spacing: -0.01em;
+  font-weight: 700; font-size: 30px; line-height: 0.92; letter-spacing: -0.01em;
 }
 .mark-sub { display: block; margin-top: 6px; font-size: 13px; color: var(--ink-3); }
 .nav { display: flex; flex-direction: column; gap: 2px; }
@@ -115,7 +115,7 @@ button, input, textarea, select { font: inherit; color: inherit; }
   .rail { display: none; }
   .main { padding: 20px 16px 96px; }
   .topbar { display: flex; align-items: center; justify-content: space-between; margin-bottom: 18px; }
-  .topbar .mark-word { font-size: 26px; }
+  .topbar .mark-word { font-size: 20px; }
   .tabbar {
     display: grid; grid-auto-flow: column; grid-auto-columns: 1fr;
     position: fixed; inset: auto 0 0 0; z-index: 20;
@@ -360,6 +360,38 @@ button, input, textarea, select { font: inherit; color: inherit; }
 @media (max-width: 860px) { .toast { bottom: 88px; } }
 .signin { display: grid; grid-template-columns: 1fr 1fr; min-height: 100dvh; }
 .signin-art { background: var(--ink); color: var(--paper); padding: 48px; display: flex; flex-direction: column; justify-content: space-between; }
-.signin-art .mark-word { font-size: clamp(64px, 9vw, 120px); }
+.signin-art .mark-word { font-size: clamp(56px, 7vw, 104px); }
 .signin-form { display: grid; place-items: center; padding: 24px; }
 @media (max-width: 860px) { .signin { grid-template-columns: 1fr; } .signin-art { padding: 28px 20px; min-height: 220px; } }
+
+/* ---------- World map ---------- */
+.map-card { display: grid; grid-template-columns: minmax(0, 1fr) 340px; background: var(--surface); border-radius: var(--r-panel); overflow: hidden; }
+.map-stage { padding: 18px 18px 14px; min-width: 0; }
+.map-svg { display: block; width: 100%; height: auto; }
+.map-land { fill: var(--sunk); stroke: var(--line); stroke-width: 0.6; }
+.map-panel { border-left: 1px solid var(--line); padding: 22px; max-height: 560px; overflow-y: auto; }
+.pin { cursor: pointer; outline: none; }
+.pin-hit { fill: transparent; }
+.pin-dot { stroke: var(--surface); stroke-width: 2.5; transition: r .15s ease; }
+.pin-reviewed .pin-dot { fill: var(--ok); }
+.pin-submitted .pin-dot { fill: var(--lapis); }
+.pin-pending .pin-dot { fill: var(--wait); }
+.pin-none .pin-dot { fill: var(--ink-3); }
+.pin-ring { fill: none; stroke: var(--alert); stroke-width: 2; }
+.pin-label { font-size: 17px; font-weight: 600; fill: var(--ink-2); paint-order: stroke; stroke: var(--surface); stroke-width: 4px; stroke-linejoin: round; pointer-events: none; }
+.pin:hover .pin-label, .pin.is-active .pin-label { fill: var(--ink); }
+.pin:focus-visible .pin-hit { stroke: var(--lapis); stroke-width: 2; }
+.map-legend { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: 12.5px; color: var(--ink-2); margin-top: 8px; padding: 0 4px; }
+.map-legend span { display: inline-flex; align-items: center; gap: 6px; }
+.lg { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
+.lg-reviewed { background: var(--ok); }
+.lg-submitted { background: var(--lapis); }
+.lg-pending { background: var(--wait); }
+.lg-ring { border: 2px solid var(--alert); width: 12px; height: 12px; }
+.panel-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+.panel-list .title { font-weight: 600; font-size: 14px; }
+.panel-list .tags { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 3px; font-size: 12.5px; color: var(--ink-3); }
+@media (max-width: 1080px) {
+  .map-card { grid-template-columns: 1fr; }
+  .map-panel { border-left: 0; border-top: 1px solid var(--line); max-height: none; }
+}

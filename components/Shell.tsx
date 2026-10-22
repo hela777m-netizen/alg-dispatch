@@ -12,7 +12,7 @@ export default function Shell({ children }: { children: React.ReactNode }) {
   return (
     <>
       <AuthLoading>
-        <Splash text="Opening Dispatch" />
+        <Splash text="Opening Reporting Dashboard" />
       </AuthLoading>
       <Unauthenticated>
         <SignedOutOrMismatch />
@@ -27,7 +27,7 @@ export default function Shell({ children }: { children: React.ReactNode }) {
 /** Clerk may say "signed in" while the database rejects the login pass. Explain instead of looping. */
 function SignedOutOrMismatch() {
   const { isLoaded, isSignedIn } = useAuth();
-  if (!isLoaded) return <Splash text="Opening Dispatch" />;
+  if (!isLoaded) return <Splash text="Opening Reporting Dashboard" />;
   if (!isSignedIn) {
     return (
       <div className="center-screen">
@@ -41,7 +41,7 @@ function SignedOutOrMismatch() {
   return (
     <div className="center-screen">
       <div className="gate">
-        <div className="mark-word">Dispatch</div>
+        <div className="mark-word">Reporting<br />Dashboard</div>
         <p className="h2">Signed in, but the database didn&apos;t accept it</p>
         <p className="muted">
           Clerk signed you in, but Convex rejected the login pass. In Clerk, check the Convex integration is active.
@@ -62,7 +62,7 @@ function Splash({ text }: { text: string }) {
   return (
     <div className="center-screen">
       <div className="gate" style={{ alignItems: "center" }}>
-        <div className="mark-word">Dispatch</div>
+        <div className="mark-word">Reporting<br />Dashboard</div>
         <p className="faint small" role="status">{text}</p>
       </div>
     </div>
@@ -92,7 +92,7 @@ function Gate({ children }: { children: React.ReactNode }) {
   return (
     <div className="center-screen">
       <div className="gate">
-        <div className="mark-word">Dispatch</div>
+        <div className="mark-word">Reporting<br />Dashboard</div>
         <p className="h2">{setupProblem ? "Sign-in isn't fully set up" : "You're not on the team list yet"}</p>
         <p className="muted">
           {setupProblem
@@ -150,7 +150,7 @@ function App({ me, children }: { me: MeMember; children: React.ReactNode }) {
         <Rail />
         <main className="main">
           <div className="topbar">
-            <Link href="/" className="mark"><span className="mark-word">Dispatch</span></Link>
+            <Link href="/" className="mark"><span className="mark-word">Reporting<br />Dashboard</span></Link>
             <UserButton />
           </div>
           {children}
@@ -208,7 +208,7 @@ function Rail() {
   return (
     <aside className="rail">
       <Link href="/" className="mark">
-        <span className="mark-word">Dispatch</span>
+        <span className="mark-word">Reporting<br />Dashboard</span>
         <span className="mark-sub">Al Liwan Group</span>
       </Link>
       <nav className="nav" aria-label="Main">

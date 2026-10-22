@@ -7,13 +7,13 @@ import { cycleOf, todayISO } from "./lib/cycles";
 import type { MutationCtx } from "./_generated/server";
 
 const DEFAULT_GEOGRAPHIES = [
-  { key: "uae", name: "UAE", region: "Abu Dhabi HQ", timezone: "Asia/Dubai" },
-  { key: "ksa", name: "Saudi Arabia", region: "Riyadh", timezone: "Asia/Riyadh" },
-  { key: "brazil", name: "Brazil", region: "São Paulo", timezone: "America/Sao_Paulo" },
-  { key: "new-york", name: "New York", region: "United States", timezone: "America/New_York" },
-  { key: "uk", name: "United Kingdom", region: "London", timezone: "Europe/London" },
-  { key: "nigeria", name: "Nigeria", region: "Lagos", timezone: "Africa/Lagos" },
-  { key: "greater-china", name: "Greater China", region: "Hong Kong and Mainland", timezone: "Asia/Hong_Kong" },
+  { key: "uae", name: "UAE", region: "Abu Dhabi HQ", timezone: "Asia/Dubai", lat: 24.45, lng: 54.38 },
+  { key: "ksa", name: "Saudi Arabia", region: "Riyadh", timezone: "Asia/Riyadh", lat: 24.71, lng: 46.68 },
+  { key: "brazil", name: "Brazil", region: "São Paulo", timezone: "America/Sao_Paulo", lat: -23.55, lng: -46.63 },
+  { key: "new-york", name: "New York", region: "United States", timezone: "America/New_York", lat: 40.71, lng: -74.01 },
+  { key: "uk", name: "United Kingdom", region: "London", timezone: "Europe/London", lat: 51.51, lng: -0.13 },
+  { key: "nigeria", name: "Nigeria", region: "Lagos", timezone: "Africa/Lagos", lat: 6.52, lng: 3.38 },
+  { key: "greater-china", name: "Greater China", region: "Hong Kong and Mainland", timezone: "Asia/Hong_Kong", lat: 22.32, lng: 114.17 },
 ];
 
 const ALL_KEYS = DEFAULT_GEOGRAPHIES.map((g) => g.key);
@@ -200,10 +200,17 @@ export const saveGeography = mutation({
     name: v.string(),
     region: v.string(),
     timezone: v.string(),
+    lat: v.optional(v.number()),
+    lng: v.optional(v.number()),
     active: v.boolean(),
   },
   handler: async (ctx, args) => {
     await requireOwner(ctx);
+    const hasPos = args.lat !== undefined && args.lng !== undefined;
+    if (hasPos && (Math.abs(args.lat!) > 90 || Math.abs(args.lng!) > 180)) {
+      throw new ConvexError("Map position should look like 24.45, 54.38");
+    }
+    const pos = hasPos ? { lat: args.lat, lng: args.lng } : { lat: undefined, lng: undefined };
     const name = clean(args.name, 60);
     if (!name) throw new ConvexError("Add a name.");
     const region = clean(args.region, 80) ?? "";
@@ -213,14 +220,14 @@ export const saveGeography = mutation({
       throw new ConvexError("Use a time zone like Asia/Dubai or America/Sao_Paulo.");
     }
     if (args.id) {
-      await ctx.db.patch(args.id, { name, region, timezone: args.timezone, active: args.active });
+      await ctx.db.patch(args.id, { name, region, timezone: args.timezone, active: args.active, ...pos });
       return args.id;
     }
     const key = name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
     const clash = await ctx.db.query("geographies").withIndex("by_key", (q) => q.eq("key", key)).first();
     if (clash) throw new ConvexError(`${clash.name} already exists.`);
     const count = (await ctx.db.query("geographies").collect()).length;
-    return await ctx.db.insert("geographies", { key, name, region, timezone: args.timezone, order: count, active: args.active });
+    return await ctx.db.insert("geographies", { key, name, region, timezone: args.timezone, order: count, active: args.active, ...pos });
   },
 });
 

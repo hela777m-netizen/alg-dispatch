@@ -5,7 +5,7 @@ import "./globals.css";
 import Providers from "./providers";
 
 export const metadata: Metadata = {
-  title: "Dispatch",
+  title: "Reporting Dashboard",
   description: "Al Liwan Group geography reporting",
   robots: { index: false, follow: false },
 };

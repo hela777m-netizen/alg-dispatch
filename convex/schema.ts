@@ -55,6 +55,8 @@ export default defineSchema({
     name: v.string(),
     region: v.string(),
     timezone: v.string(),
+    lat: v.optional(v.number()),
+    lng: v.optional(v.number()),
     order: v.number(),
     active: v.boolean(),
   }).index("by_key", ["key"]),

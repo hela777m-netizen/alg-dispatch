@@ -6,7 +6,7 @@ import { geoNaturalEarth1, geoPath } from "d3-geo";
 import { feature } from "topojson-client";
 import type { Topology, GeometryCollection } from "topojson-specification";
 import type { FeatureCollection } from "geojson";
-import land110 from "world-atlas/land-110m.json";
+import countries110 from "world-atlas/countries-110m.json";
 import type { Doc } from "@/convex/_generated/dataModel";
 import { KindMark, StageTrack, Status } from "./bits";
 import { localTime, money, shortDate, STAGE_LABEL, type Kind, type Stage } from "@/lib/format";
@@ -20,6 +20,17 @@ const FALLBACK: Record<string, [number, number]> = {
   uk: [51.51, -0.13],
   nigeria: [6.52, 3.38],
   "greater-china": [22.32, 114.17],
+};
+
+/** Countries to shade for the starting geographies (ISO numeric codes). */
+const COUNTRIES: Record<string, string[]> = {
+  uae: ["784"],
+  ksa: ["682"],
+  brazil: ["076"],
+  "new-york": ["840"],
+  uk: ["826"],
+  nigeria: ["566"],
+  "greater-china": ["156"],
 };
 
 /** Labels that sit left of their pin to avoid neighbours. */
@@ -77,15 +88,21 @@ export default function WorldMap({
   onSelect: (key: string | null) => void;
   now: Date;
 }) {
-  const { landPath, project } = useMemo(() => {
-    const topo = land110 as unknown as Topology<{ land: GeometryCollection }>;
-    const land = feature(topo, topo.objects.land) as unknown as FeatureCollection;
+  const { shapes, project } = useMemo(() => {
+    const topo = countries110 as unknown as Topology<{ countries: GeometryCollection }>;
+    const world = feature(topo, topo.objects.countries) as unknown as FeatureCollection;
     // Frame the inhabited world; leave out Antarctica.
     const frame = { type: "MultiPoint" as const, coordinates: [[-168, 74], [180, 74], [-168, -50], [180, -50]] };
     const projection = geoNaturalEarth1().fitExtent([[8, 8], [W - 8, H - 8]], frame);
     const path = geoPath(projection);
-    return { landPath: path(land) ?? "", project: (lng: number, lat: number) => projection([lng, lat]) };
+    const shapes = world.features
+      .filter((f) => f.id !== "010") // Antarctica
+      .map((f) => ({ id: String(f.id ?? ""), d: path(f) ?? "" }));
+    return { shapes, project: (lng: number, lat: number) => projection([lng, lat]) };
   }, []);
+
+  const operating = new Map<string, string>();
+  for (const g of geos) for (const id of COUNTRIES[g.key] ?? []) operating.set(id, g.key);
 
   const pins = geos
     .map((g) => {
@@ -105,7 +122,17 @@ export default function WorldMap({
     <div className="map-card">
       <div className="map-stage">
         <svg viewBox={`0 0 ${W} ${H}`} className="map-svg" role="group" aria-label="Map of reporting locations">
-          <path d={landPath} className="map-land" />
+          {shapes.map((c, i) => {
+            const geoKey = operating.get(c.id);
+            return (
+              <path
+                key={c.id || i}
+                d={c.d}
+                className={`map-country ${geoKey ? "is-ours" : ""} ${geoKey && geoKey === selected ? "is-selected" : ""}`}
+                onClick={geoKey ? () => onSelect(geoKey === selected ? null : geoKey) : undefined}
+              />
+            );
+          })}
           {pins.map((p) => {
             const left = LABEL_LEFT.has(p.g.key);
             const active = selected === p.g.key;

@@ -27,6 +27,11 @@
   --display: "Bricolage Grotesque Variable", "Bricolage Grotesque", system-ui, sans-serif;
   --body: "Hanken Grotesk Variable", "Hanken Grotesk", system-ui, sans-serif;
 
+  --map-land: #d9e0db;
+  --map-border: #eef1ee;
+  --map-ours: #c7d0f3;
+  --map-ours-strong: #a9b7ee;
+
   --r-panel: 18px;
   --r-field: 10px;
   --rail: 236px;
@@ -57,6 +62,10 @@
     --k-blocker: #f08398;
     --k-ask: #e3b15a;
     --k-next: #a5b2ac;
+    --map-land: #43544c;
+    --map-border: #15201c;
+    --map-ours: #34437a;
+    --map-ours-strong: #4a5ca8;
     color-scheme: dark;
   }
 }
@@ -368,7 +377,9 @@ button, input, textarea, select { font: inherit; color: inherit; }
 .map-card { display: grid; grid-template-columns: minmax(0, 1fr) 340px; background: var(--surface); border-radius: var(--r-panel); overflow: hidden; }
 .map-stage { padding: 18px 18px 14px; min-width: 0; }
 .map-svg { display: block; width: 100%; height: auto; }
-.map-land { fill: var(--sunk); stroke: var(--line); stroke-width: 0.6; }
+.map-country { fill: var(--map-land); stroke: var(--map-border); stroke-width: 0.5; }
+.map-country.is-ours { fill: var(--map-ours); cursor: pointer; }
+.map-country.is-ours:hover, .map-country.is-selected { fill: var(--map-ours-strong); }
 .map-panel { border-left: 1px solid var(--line); padding: 22px; max-height: 560px; overflow-y: auto; }
 .pin { cursor: pointer; outline: none; }
 .pin-hit { fill: transparent; }

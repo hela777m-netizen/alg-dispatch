@@ -26,7 +26,7 @@ export default function Providers({ children }: { children: React.ReactNode }) {
         variables: {
           colorPrimary: "#0b3b80",
           borderRadius: "10px",
-          fontFamily: '"Hanken Grotesk Variable", system-ui, sans-serif',
+          fontFamily: '"Inter Variable", "Inter", system-ui, sans-serif',
         },
       }}
     >

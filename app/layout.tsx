@@ -1,6 +1,5 @@
 import type { Metadata, Viewport } from "next";
-import "@fontsource-variable/bricolage-grotesque/standard.css";
-import "@fontsource-variable/hanken-grotesk/index.css";
+import "@fontsource-variable/inter/opsz.css";
 import "./globals.css";
 import Providers from "./providers";
 

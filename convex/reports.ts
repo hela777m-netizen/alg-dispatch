@@ -3,6 +3,7 @@ import { mutation, query } from "./_generated/server";
 import type { Doc } from "./_generated/dataModel";
 import type { QueryCtx } from "./_generated/server";
 import { canLogTo, clean, isLead, requireLead, requireMember } from "./lib/access";
+import { notify } from "./lib/notify";
 
 async function findReport(ctx: QueryCtx, authorId: Doc<"members">["_id"], cycle: number, geography: string) {
   return await ctx.db
@@ -83,6 +84,12 @@ export const setStatus = mutation({
     if (!report) throw new ConvexError("That report was deleted.");
     if (report.status === "draft") throw new ConvexError("This report hasn't been sent yet.");
     await ctx.db.patch(id, { status, reviewedBy: me._id, reviewedAt: Date.now() });
+    const geo = await ctx.db.query("geographies").withIndex("by_key", (q) => q.eq("key", report.geography)).unique();
+    await notify(
+      ctx, report.authorId, me, "report_status",
+      status === "reviewed" ? `${me.name} reviewed your ${geo?.name ?? report.geography} report.` : `${me.name} asked for more information on your ${geo?.name ?? report.geography} report.`,
+      { reportId: id },
+    );
   },
 });
 
@@ -134,5 +141,10 @@ export const comment = mutation({
     const text = clean(body, 4000);
     if (!text) throw new ConvexError("Write a comment first.");
     await ctx.db.insert("comments", { reportId, authorId: me._id, body: text, createdAt: Date.now() });
+    const thread = await ctx.db.query("comments").withIndex("by_report", (q) => q.eq("reportId", reportId)).collect();
+    const recipients = new Set([report.authorId, ...thread.map((c) => c.authorId)]);
+    for (const to of recipients) {
+      await notify(ctx, to, me, "report_comment", `${me.name}: ${text}`, { reportId });
+    }
   },
 });

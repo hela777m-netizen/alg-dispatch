@@ -9,6 +9,7 @@ import { useApp } from "@/components/AppContext";
 import CycleRibbon from "@/components/CycleRibbon";
 import EntryList from "@/components/EntryList";
 import WorldMap from "@/components/WorldMap";
+import { PresenceTag } from "@/components/Presence";
 import { Empty, KindMark, Mix, Spark, StageTrack, Status } from "@/components/bits";
 import { useClock } from "@/lib/useClock";
 import { localTime, money, moneyShort, shortDate, STAGE_LABEL } from "@/lib/format";
@@ -39,6 +40,7 @@ function Overview() {
   const data = useQuery(api.dashboard.overview, { cycle });
   const entries = useQuery(api.entries.forCycle, { cycle });
   const now = useClock();
+  const team = useQuery(api.members.team, isLead ? {} : "skip");
   const [view, setView] = useState<"map" | "list">("map");
   const [selected, setSelected] = useState<string | null>(null);
 
@@ -70,6 +72,23 @@ function Overview() {
         />
         <Kpi value={data?.totals.blockers} label="Blockers" />
       </div>
+
+      {isLead && team && team.length > 0 && (
+        <section className="section">
+          <div className="section-head">
+            <h2 className="h2">Team today</h2>
+            <span className="small faint">Only what people choose to share</span>
+          </div>
+          <div className="team-strip">
+            {team.map((m) => (
+              <Link key={m._id} href={`/people/${m._id}`}>
+                <span className="who-name">{m.name}</span>
+                <PresenceTag p={m} />
+              </Link>
+            ))}
+          </div>
+        </section>
+      )}
 
       <section className="section">
         <div className="section-head">
@@ -193,7 +212,7 @@ function Overview() {
                     {data?.roster.map((r) => (
                       <tr key={`${r.memberId}-${r.geography}`}>
                         <td>
-                          <div style={{ fontWeight: 600 }}>{r.name}</div>
+                          <Link href={`/people/${r.memberId}`} className="tag-link" style={{ fontWeight: 600 }}>{r.name}</Link>
                           <div className="small faint">{geoName(r.geography)}, {r.entries} update{r.entries === 1 ? "" : "s"}{r.linked ? "" : ", hasn't signed in yet"}</div>
                         </td>
                         <td className="right">

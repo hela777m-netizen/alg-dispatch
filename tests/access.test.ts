@@ -48,6 +48,7 @@ describe("access", () => {
     expect(me.state).toBe("member");
     if (me.state !== "member") return;
     expect(me.geographies.map((g) => g.key)).toEqual(["uae", "ksa", "brazil", "new-york", "uk", "nigeria", "greater-china"]);
+    expect(me.geographies.find((g) => g.key === "new-york")?.name).toBe("United States");
     expect(me.member.role).toBe("owner");
     expect(me.cycle).toBe(cycleOf(today));
     expect((await ctx.hela.query(api.members.list, {})).length).toBe(6);
@@ -151,5 +152,48 @@ describe("access", () => {
     const ken = (await ctx.hela.query(api.members.list, {})).find((m) => m.name === "Ken Brenner")!;
     await ctx.hela.mutation(api.members.save, { id: ken._id, name: ken.name, email: KEN.email, role: "reporter", geographies: ken.geographies, extraGeographies: [], active: false });
     expect((await ctx.ken.query(api.members.me, {})).state).toBe("unlinked");
+  });
+});
+
+describe("responses, notifications and check-in", () => {
+  let ctx: Awaited<ReturnType<typeof setup>>;
+  beforeEach(async () => { ctx = await setup(); });
+
+  test("manager responds to a blocker, author is notified, outsiders can't respond", async () => {
+    const [id] = await ctx.zain.mutation(api.entries.addMany, { entries: [entry("ksa", "Bank account opening stuck", { kind: "blocker" })], source: "typed" });
+    await ctx.amy.mutation(api.entries.respond, { entryId: id, body: "I'll call the bank's MD tomorrow.", source: "voice" });
+    expect(await ctx.zain.query(api.notifications.unreadCount, {})).toBe(1);
+    const inbox = await ctx.zain.query(api.notifications.list, {});
+    expect(inbox[0].actorName).toBe("Amy Swartz");
+    expect(inbox[0].entryTitle).toBe("Bank account opening stuck");
+    await expect(ctx.ken.mutation(api.entries.respond, { entryId: id, body: "hi", source: "typed" })).rejects.toThrow();
+    expect(await ctx.ken.query(api.entries.responses, { entryId: id })).toEqual([]);
+
+    // Zain replies; Amy hears back, Zain doesn't notify himself.
+    await ctx.zain.mutation(api.entries.respond, { entryId: id, body: "Thanks, sent you the contact.", source: "typed" });
+    expect(await ctx.amy.query(api.notifications.unreadCount, {})).toBe(1);
+    await ctx.zain.mutation(api.notifications.markRead, {});
+    expect(await ctx.zain.query(api.notifications.unreadCount, {})).toBe(0);
+    const thread = await ctx.zain.query(api.entries.responses, { entryId: id });
+    expect(thread.map((r) => r.authorName)).toEqual(["Amy Swartz", "Zain Ansari"]);
+  });
+
+  test("check-in is self-service; managers see the team, reporters see only themselves", async () => {
+    await ctx.zain.mutation(api.members.setPresence, { presence: "leave", location: "Riyadh", until: "2026-10-30" });
+    const team = await ctx.amy.query(api.members.team, {});
+    expect(team.find((m) => m.name === "Zain Ansari")?.presence).toBe("leave");
+    expect((await ctx.ken.query(api.members.team, {})).map((m) => m.name)).toEqual(["Ken Brenner"]);
+    const zainId = team.find((m) => m.name === "Zain Ansari")!._id;
+    expect(await ctx.ken.query(api.members.person, { id: zainId })).toBeNull();
+    expect((await ctx.amy.query(api.members.person, { id: zainId }))?.presenceUntil).toBe("2026-10-30");
+    expect(await ctx.ken.query(api.entries.forPerson, { memberId: zainId, fromCycle: 0 })).toEqual([]);
+  });
+
+  test("review decisions notify the author", async () => {
+    const c = cycleOf(today);
+    const rid = await ctx.ken.mutation(api.reports.save, { geography: "new-york", cycle: c, summary: "Highlights: two investor meetings.", submit: true });
+    await ctx.amy.mutation(api.reports.setStatus, { id: rid, status: "needs_info" });
+    const inbox = await ctx.ken.query(api.notifications.list, {});
+    expect(inbox[0].kind).toBe("report_status");
   });
 });

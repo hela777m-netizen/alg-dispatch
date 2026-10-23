@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
+import ResponseBox from "./ResponseBox";
 import { geoNaturalEarth1, geoPath } from "d3-geo";
 import { feature } from "topojson-client";
 import type { Topology, GeometryCollection } from "topojson-specification";
@@ -51,7 +52,7 @@ type Geo = {
 };
 
 type RosterRow = { memberId: string; name: string; geography: string; status: string };
-type Entry = Doc<"entries"> & { authorName: string };
+type Entry = Doc<"entries"> & { authorName: string; responses?: number };
 type Deal = { id: string; title: string; geography: string; counterparty?: string; stage: Stage; value?: number; owner: string };
 
 export type PinState = "reviewed" | "submitted" | "pending" | "none";
@@ -251,12 +252,7 @@ function GeoSummary({
       </PanelBlock>
 
       <PanelBlock title="Blockers and asks" empty="Nothing stuck.">
-        {blockers.map((e) => (
-          <li key={e._id}>
-            <div className="title">{e.title}</div>
-            <div className="tags"><KindMark kind={e.kind} /><span>{e.authorName}</span></div>
-          </li>
-        ))}
+        {blockers.map((e) => <BlockerItem key={e._id} entry={e} />)}
       </PanelBlock>
 
       {deals.length > 0 && (
@@ -281,6 +277,25 @@ function GeoSummary({
 
       <Link href={`/geo/${geo.key}`} className="btn quiet sm" style={{ alignSelf: "flex-start" }}>Open {geo.name}</Link>
     </div>
+  );
+}
+
+function BlockerItem({ entry }: { entry: Entry }) {
+  const [open, setOpen] = useState(false);
+  const n = entry.responses ?? 0;
+  return (
+    <li>
+      <div className="title">{entry.title}</div>
+      {entry.details && <div className="small muted" style={{ marginTop: 2 }}>{entry.details}</div>}
+      <div className="tags">
+        <KindMark kind={entry.kind} />
+        <span>{entry.authorName}</span>
+        <button type="button" className={`tag-btn ${n === 0 ? "is-urgent" : ""}`} aria-expanded={open} onClick={() => setOpen((o) => !o)}>
+          {open ? "Hide" : n > 0 ? `${n} response${n === 1 ? "" : "s"}` : "Respond"}
+        </button>
+      </div>
+      {open && <ResponseBox entryId={entry._id} about={entry.title} authorName={entry.authorName} />}
+    </li>
   );
 }
 

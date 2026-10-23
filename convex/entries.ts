@@ -3,6 +3,7 @@ import { mutation, query } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { QueryCtx } from "./_generated/server";
 import { canLogTo, canSee, clean, getAnchor, isLead, requireMember } from "./lib/access";
+import { notify } from "./lib/notify";
 import { cycleOf } from "./lib/cycles";
 import { kindValidator, stageValidator } from "./schema";
 
@@ -98,11 +99,59 @@ export const remove = mutation({
 
 export async function withAuthors(ctx: QueryCtx, entries: Doc<"entries">[]) {
   const names = new Map<string, string>();
+  const out = [];
   for (const e of entries) {
     if (!names.has(e.authorId)) names.set(e.authorId, (await ctx.db.get(e.authorId))?.name ?? "Former member");
+    const responses = (await ctx.db.query("responses").withIndex("by_entry", (q) => q.eq("entryId", e._id)).collect()).length;
+    out.push({ ...e, authorName: names.get(e.authorId)!, responses });
   }
-  return entries.map((e) => ({ ...e, authorName: names.get(e.authorId)! }));
+  return out;
 }
+
+/** Replies on one update, oldest first. */
+export const responses = query({
+  args: { entryId: v.id("entries") },
+  handler: async (ctx, { entryId }) => {
+    const me = await requireMember(ctx);
+    const entry = await ctx.db.get(entryId);
+    if (!entry || !canSee(me, entry.geography)) return [];
+    const rows = await ctx.db.query("responses").withIndex("by_entry", (q) => q.eq("entryId", entryId)).collect();
+    return await Promise.all(
+      rows.map(async (r) => ({ ...r, authorName: (await ctx.db.get(r.authorId))?.name ?? "Former member", mine: r.authorId === me._id })),
+    );
+  },
+});
+
+export const respond = mutation({
+  args: { entryId: v.id("entries"), body: v.string(), source: v.union(v.literal("typed"), v.literal("voice")) },
+  handler: async (ctx, { entryId, body, source }) => {
+    const me = await requireMember(ctx);
+    const entry = await ctx.db.get(entryId);
+    if (!entry) throw new ConvexError("That update was deleted.");
+    if (!canSee(me, entry.geography)) throw new ConvexError("You can't respond to this update.");
+    const text = clean(body, 4000);
+    if (!text) throw new ConvexError("Write or record a response first.");
+    const earlier = await ctx.db.query("responses").withIndex("by_entry", (q) => q.eq("entryId", entryId)).collect();
+    await ctx.db.insert("responses", { entryId, authorId: me._id, body: text, source, createdAt: Date.now() });
+
+    const recipients = new Set([entry.authorId, ...earlier.map((r) => r.authorId)]);
+    for (const to of recipients) {
+      await notify(ctx, to, me, "response", `${me.name}: ${text}`, { entryId });
+    }
+  },
+});
+
+/** Everything one person logged recently, for the person view. */
+export const forPerson = query({
+  args: { memberId: v.id("members"), fromCycle: v.number() },
+  handler: async (ctx, { memberId, fromCycle }) => {
+    const me = await requireMember(ctx);
+    if (memberId !== me._id && !isLead(me)) return [];
+    const rows = (await ctx.db.query("entries").withIndex("by_author_cycle", (q) => q.eq("authorId", memberId).gte("cycle", fromCycle)).collect());
+    rows.sort((a, b) => b.date.localeCompare(a.date) || b._creationTime - a._creationTime);
+    return await withAuthors(ctx, rows);
+  },
+});
 
 /** Updates in one cycle, limited to what the viewer may see. */
 export const forCycle = query({

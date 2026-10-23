@@ -17,7 +17,8 @@ const LANGS = [
 
 export default function Composer({ defaultGeography }: { defaultGeography: string }) {
   const { today, toast } = useApp();
-  const [mode, setMode] = useState<"talk" | "single">("talk");
+  const [mode, setMode] = useState<"talk" | "single" | "upload">("talk");
+  const [fileName, setFileName] = useState<string | null>(null);
   const [text, setText] = useState("");
   const [lang, setLang] = useState("en-GB");
   const [drafts, setDrafts] = useState<EntryDraft[] | null>(null);
@@ -27,6 +28,8 @@ export default function Composer({ defaultGeography }: { defaultGeography: strin
   const [usedVoice, setUsedVoice] = useState(false);
 
   const structure = useAction(api.ai.structure);
+  const fromDocument = useAction(api.ai.fromDocument);
+  const uploadUrl = useMutation(api.files.uploadUrl);
   const addMany = useMutation(api.entries.addMany);
   const dictation = useDictation((phrase) => {
     setUsedVoice(true);
@@ -43,6 +46,38 @@ export default function Composer({ defaultGeography }: { defaultGeography: strin
       else setDrafts(result);
     } catch (e) {
       setErr(errorText(e));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function readFile(file: File) {
+    setErr(null);
+    setFileName(file.name);
+    setBusy("structuring");
+    try {
+      const name = file.name.toLowerCase();
+      let result;
+      if (name.endsWith(".pdf")) {
+        if (file.size > 8 * 1024 * 1024) throw new Error("That file is over 8 MB. Export a smaller PDF or split it.");
+        const url = await uploadUrl({});
+        const res = await fetch(url, { method: "POST", headers: { "Content-Type": "application/pdf" }, body: file });
+        if (!res.ok) throw new Error("The upload failed. Try again.");
+        const { storageId } = (await res.json()) as { storageId: string };
+        result = await fromDocument({ storageId: storageId as never, defaultGeography });
+      } else if (name.endsWith(".docx")) {
+        const mammoth = await import("mammoth/mammoth.browser");
+        const { value } = await mammoth.extractRawText({ arrayBuffer: await file.arrayBuffer() });
+        result = await structure({ text: `This is an existing written report.\n\n${value}`, defaultGeography });
+      } else if (name.endsWith(".txt") || name.endsWith(".md")) {
+        result = await structure({ text: await file.text(), defaultGeography });
+      } else {
+        throw new Error("Use a PDF or Word (.docx) file. For an old .doc file, save it as .docx or PDF first.");
+      }
+      if (result.length === 0) setErr("Couldn't find any updates in that file.");
+      else setDrafts(result);
+    } catch (e) {
+      setErr(e instanceof Error && !(e as { data?: unknown }).data ? e.message : errorText(e));
     } finally {
       setBusy(null);
     }
@@ -70,6 +105,7 @@ export default function Composer({ defaultGeography }: { defaultGeography: strin
         <div className="segmented" role="group" aria-label="How to log">
           <button aria-pressed={mode === "talk"} onClick={() => setMode("talk")}>Talk it through</button>
           <button aria-pressed={mode === "single"} onClick={() => setMode("single")}>Add one item</button>
+          <button aria-pressed={mode === "upload"} onClick={() => setMode("upload")}>Upload a report</button>
         </div>
       </div>
 
@@ -119,10 +155,32 @@ export default function Composer({ defaultGeography }: { defaultGeography: strin
         </>
       )}
 
-      {mode === "talk" && drafts && (
+      {mode === "upload" && !drafts && (
+        <label className={`dropzone ${busy ? "is-busy" : ""}`}>
+          <input
+            type="file"
+            accept=".pdf,.docx,.txt,.md,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+            className="sr-only"
+            disabled={busy !== null}
+            onChange={(e) => {
+              const f = e.target.files?.[0];
+              e.target.value = "";
+              if (f) readFile(f);
+            }}
+          />
+          <strong>{busy === "structuring" ? `Reading ${fileName ?? "the file"}` : "Choose a PDF or Word report"}</strong>
+          <span className="small faint">
+            {busy === "structuring"
+              ? "This can take up to a minute for a long report."
+              : "Claude reads it, files each item under the right geography, and you check everything before saving. The file itself isn't kept."}
+          </span>
+        </label>
+      )}
+
+      {mode !== "single" && drafts && (
         <>
           <p className="muted" style={{ margin: 0 }}>
-            {drafts.length === 1 ? "One update" : `${drafts.length} updates`} found. Check them, fix anything, then save.
+            {drafts.length === 1 ? "One update" : `${drafts.length} updates`} found{mode === "upload" && fileName ? ` in ${fileName}` : ""}. Each is filed under the geography it's about. Check them, fix anything, then save.
           </p>
           {drafts.map((d, i) => (
             <div className="draft-card" key={i}>
@@ -133,7 +191,7 @@ export default function Composer({ defaultGeography }: { defaultGeography: strin
             </div>
           ))}
           <div className="row end">
-            <button className="btn quiet" onClick={() => setDrafts(null)}>Back to text</button>
+            <button className="btn quiet" onClick={() => setDrafts(null)}>{mode === "upload" ? "Choose another file" : "Back to text"}</button>
             <button
               className="btn"
               disabled={busy !== null || drafts.length === 0 || drafts.some((d) => !d.title.trim())}

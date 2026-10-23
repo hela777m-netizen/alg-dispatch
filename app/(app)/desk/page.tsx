@@ -8,6 +8,7 @@ import Composer from "@/components/Composer";
 import EntryList from "@/components/EntryList";
 import { ReportSlot } from "@/components/Report";
 import { Status } from "@/components/bits";
+import { MyPresence } from "@/components/Presence";
 import { cycleRange } from "@/convex/lib/cycles";
 import { rangeLabel } from "@/lib/format";
 
@@ -28,6 +29,7 @@ export default function DeskPage() {
   return (
     <>
       <CycleRibbon perDay={perDay} title={cycle === currentCycle ? `${first}'s desk` : undefined} />
+      <div style={{ marginTop: 18 }}><MyPresence variant="card" /></div>
 
       <div className="section grid-2">
         <div className="stack" style={{ gap: 28 }}>

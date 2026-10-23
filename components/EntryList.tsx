@@ -7,9 +7,11 @@ import type { Doc } from "@/convex/_generated/dataModel";
 import { useApp } from "./AppContext";
 import EntryForm, { tidy, type EntryDraft } from "./EntryForm";
 import { Empty, KindMark, StageTrack } from "./bits";
+import ResponseBox from "./ResponseBox";
+import Link from "next/link";
 import { errorText, money, shortDate, STAGE_LABEL } from "@/lib/format";
 
-type Entry = Doc<"entries"> & { authorName: string };
+type Entry = Doc<"entries"> & { authorName: string; responses?: number };
 
 export default function EntryList({
   entries,
@@ -32,10 +34,11 @@ export default function EntryList({
 }
 
 function Row({ entry, showAuthor, showGeo }: { entry: Entry; showAuthor: boolean; showGeo: boolean }) {
-  const { member, isOwner, geoName, toast } = useApp();
+  const { member, isOwner, isLead, geoName, toast } = useApp();
   const [editing, setEditing] = useState<EntryDraft | null>(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [open, setOpen] = useState(false);
   const update = useMutation(api.entries.update);
   const remove = useMutation(api.entries.remove);
   const canEdit = entry.authorId === member._id || isOwner;
@@ -87,10 +90,23 @@ function Row({ entry, showAuthor, showGeo }: { entry: Entry; showAuthor: boolean
             </span>
           )}
           {entry.dealValue !== undefined && <span>{money(entry.dealValue)}</span>}
-          {showAuthor && <span>{entry.authorName}</span>}
+          {showAuthor && (isLead ? <Link href={`/people/${entry.authorId}`} className="tag-link">{entry.authorName}</Link> : <span>{entry.authorName}</span>)}
           {entry.source === "voice" && <span>Dictated</span>}
           {entry.editedBy && <span>Edited by owner</span>}
+          {(() => {
+            const n = entry.responses ?? 0;
+            const urgent = entry.kind === "blocker" || entry.kind === "ask";
+            const own = entry.authorId === member._id;
+            if (n === 0 && (own || (!urgent && !isLead))) return null;
+            const label = n > 0 ? `${n} response${n === 1 ? "" : "s"}` : "Respond";
+            return (
+              <button type="button" className={`tag-btn ${urgent && n === 0 ? "is-urgent" : ""}`} aria-expanded={open} onClick={() => setOpen((o) => !o)}>
+                {open ? "Hide" : label}
+              </button>
+            );
+          })()}
         </div>
+        {open && <ResponseBox entryId={entry._id} about={entry.title} authorName={entry.authorName} />}
       </div>
       {canEdit && (
         <div className="item-actions">

@@ -10,7 +10,12 @@ export const context = internalQuery({
     const me = await currentMember(ctx);
     if (!me) return null;
     const geographies = (await ctx.db.query("geographies").collect()).filter((g) => g.active && canLogTo(me, g.key));
-    return { name: me.name, today: todayISO(), geographies: geographies.map((g) => ({ key: g.key, name: g.name })) };
+    return {
+      name: me.name,
+      today: todayISO(),
+      location: me.location,
+      geographies: geographies.map((g) => ({ key: g.key, name: g.name, region: g.region })),
+    };
   },
 });
 

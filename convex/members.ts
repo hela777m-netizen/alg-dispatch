@@ -1,8 +1,8 @@
 import { v, ConvexError } from "convex/values";
 import { action, internalMutation, mutation, query } from "./_generated/server";
 import { internal } from "./_generated/api";
-import { currentMember, getAnchor, requireLead, requireOwner, clean } from "./lib/access";
-import { roleValidator } from "./schema";
+import { currentMember, getAnchor, requireLead, requireMember, requireOwner, clean } from "./lib/access";
+import { presenceValidator, roleValidator } from "./schema";
 import { cycleOf, todayISO } from "./lib/cycles";
 import type { MutationCtx } from "./_generated/server";
 
@@ -10,7 +10,7 @@ const DEFAULT_GEOGRAPHIES = [
   { key: "uae", name: "UAE", region: "Abu Dhabi HQ", timezone: "Asia/Dubai", lat: 24.45, lng: 54.38 },
   { key: "ksa", name: "Saudi Arabia", region: "Riyadh", timezone: "Asia/Riyadh", lat: 24.71, lng: 46.68 },
   { key: "brazil", name: "Brazil", region: "São Paulo", timezone: "America/Sao_Paulo", lat: -23.55, lng: -46.63 },
-  { key: "new-york", name: "New York", region: "United States", timezone: "America/New_York", lat: 40.71, lng: -74.01 },
+  { key: "new-york", name: "United States", region: "New York", timezone: "America/New_York", lat: 40.71, lng: -74.01 },
   { key: "uk", name: "United Kingdom", region: "London", timezone: "Europe/London", lat: 51.51, lng: -0.13 },
   { key: "nigeria", name: "Nigeria", region: "Lagos", timezone: "Africa/Lagos", lat: 6.52, lng: 3.38 },
   { key: "greater-china", name: "Greater China", region: "Hong Kong and Mainland", timezone: "Asia/Hong_Kong", lat: 22.32, lng: 114.17 },
@@ -252,5 +252,71 @@ export const setAnchor = mutation({
     const row = await ctx.db.query("settings").withIndex("by_key", (q) => q.eq("key", "cycleAnchor")).unique();
     if (row) await ctx.db.patch(row._id, { value: anchor });
     else await ctx.db.insert("settings", { key: "cycleAnchor", value: anchor });
+  },
+});
+
+/** Optional check-in: where you are and whether you're working. */
+export const setPresence = mutation({
+  args: {
+    presence: v.optional(presenceValidator),
+    location: v.optional(v.string()),
+    until: v.optional(v.string()),
+  },
+  handler: async (ctx, { presence, location, until }) => {
+    const me = await requireMember(ctx);
+    if (until && !/^\d{4}-\d{2}-\d{2}$/.test(until)) throw new ConvexError("Pick a date.");
+    await ctx.db.patch(me._id, {
+      presence,
+      location: clean(location, 80),
+      presenceUntil: presence === "leave" || presence === "travelling" ? until : undefined,
+      presenceUpdatedAt: Date.now(),
+    });
+  },
+});
+
+/** One person's profile for the person view. Leads see anyone; others only themselves. */
+export const person = query({
+  args: { id: v.id("members") },
+  handler: async (ctx, { id }) => {
+    const me = await currentMember(ctx);
+    if (!me) return null;
+    if (id !== me._id && me.role === "reporter") return null;
+    const m = await ctx.db.get(id);
+    if (!m) return null;
+    const reports = (await ctx.db.query("reports").collect())
+      .filter((r) => r.authorId === id && r.status !== "draft")
+      .sort((a, b) => b.cycle - a.cycle)
+      .slice(0, 12);
+    return {
+      _id: m._id,
+      name: m.name,
+      title: m.title,
+      role: m.role,
+      geographies: m.geographies,
+      extraGeographies: m.extraGeographies,
+      presence: m.presence,
+      location: m.location,
+      presenceUntil: m.presenceUntil,
+      presenceUpdatedAt: m.presenceUpdatedAt,
+      linked: Boolean(m.userId),
+      reports,
+    };
+  },
+});
+
+/** Where everyone is, for managers. Reporters only get themselves. */
+export const team = query({
+  args: {},
+  handler: async (ctx) => {
+    const me = await currentMember(ctx);
+    if (!me) return [];
+    const rows = (await ctx.db.query("members").collect()).filter((m) => m.active && (me.role !== "reporter" || m._id === me._id));
+    const rank = { owner: 0, manager: 1, reporter: 2 };
+    return rows
+      .sort((a, b) => rank[a.role] - rank[b.role] || a.name.localeCompare(b.name))
+      .map((m) => ({
+        _id: m._id, name: m.name, role: m.role, geographies: m.geographies,
+        presence: m.presence, location: m.location, presenceUntil: m.presenceUntil, presenceUpdatedAt: m.presenceUpdatedAt,
+      }));
   },
 });

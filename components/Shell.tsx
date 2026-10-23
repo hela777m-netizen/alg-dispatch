@@ -8,6 +8,7 @@ import { SignOutButton, UserButton, useAuth, useUser } from "@clerk/nextjs";
 import { api } from "@/convex/_generated/api";
 import { AppContext, useApp, type AppState } from "./AppContext";
 import Logo from "./Logo";
+import { MyPresence } from "./Presence";
 
 export default function Shell({ children }: { children: React.ReactNode }) {
   return (
@@ -166,17 +167,21 @@ function App({ me, children }: { me: MeMember; children: React.ReactNode }) {
 function useNav() {
   const { member } = useApp();
   const waiting = useQuery(api.reports.forReview, member.role !== "reporter" ? {} : "skip");
+  const unread = useQuery(api.notifications.unreadCount) ?? 0;
   const pending = waiting?.length ?? 0;
+  const inbox = { href: "/inbox", label: "Inbox", badge: unread || undefined };
   if (member.role === "reporter") {
     return [
       { href: "/desk", label: "My desk" },
       ...member.geographies.map((g) => ({ href: `/geo/${g}`, label: g, geo: g })),
+      inbox,
       { href: "/", label: "Overview" },
     ] as { href: string; label: string; badge?: number; geo?: string }[];
   }
   const items: { href: string; label: string; badge?: number; geo?: string }[] = [
     { href: "/", label: "Overview" },
     { href: "/reviews", label: "Reviews", badge: pending || undefined },
+    inbox,
     { href: "/desk", label: "My desk" },
   ];
   if (member.role === "owner") items.push({ href: "/admin", label: "Team" });
@@ -195,7 +200,7 @@ function NavLinks({ variant }: { variant: "rail" | "tab" }) {
         return (
           <Link key={it.href} href={it.href} aria-current={active ? "page" : undefined}>
             <span>{label}</span>
-            {variant === "rail" && it.badge ? <span className="count">{it.badge}</span> : null}
+            {it.badge ? <span className="count">{it.badge}</span> : null}
           </Link>
         );
       })}
@@ -215,12 +220,15 @@ function Rail() {
       <nav className="nav" aria-label="Main">
         <NavLinks variant="rail" />
       </nav>
+      <div className="rail-presence">
+        <MyPresence />
+      </div>
       <div className="rail-foot">
         <UserButton />
-        <div className="who">
+        <Link href={`/people/${member._id}`} className="who" style={{ textDecoration: "none" }}>
           {member.name}
           <span>{role}</span>
-        </div>
+        </Link>
       </div>
     </aside>
   );

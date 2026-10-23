@@ -26,6 +26,13 @@ export const stageValidator = v.union(
   v.literal("lost"),
 );
 
+export const presenceValidator = v.union(
+  v.literal("office"),
+  v.literal("travelling"),
+  v.literal("remote"),
+  v.literal("leave"),
+);
+
 export const reportStatusValidator = v.union(
   v.literal("draft"),
   v.literal("submitted"),
@@ -46,6 +53,11 @@ export default defineSchema({
     extraGeographies: v.array(v.string()),
     userId: v.optional(v.string()), // login id, set on first sign-in
     active: v.boolean(),
+    // Optional check-in: where they are and whether they're working. Sticky until changed.
+    presence: v.optional(presenceValidator),
+    location: v.optional(v.string()),
+    presenceUntil: v.optional(v.string()), // YYYY-MM-DD, mainly for leave and travel
+    presenceUpdatedAt: v.optional(v.number()),
   })
     .index("by_email", ["email"])
     .index("by_userId", ["userId"]),
@@ -96,6 +108,26 @@ export default defineSchema({
     .index("by_cycle", ["cycle"])
     .index("by_author_cycle_geo", ["authorId", "cycle", "geography"])
     .index("by_status", ["status"]),
+
+  // Replies on an individual update, e.g. a manager's answer to a blocker.
+  responses: defineTable({
+    entryId: v.id("entries"),
+    authorId: v.id("members"),
+    body: v.string(),
+    source: v.union(v.literal("typed"), v.literal("voice")),
+    createdAt: v.number(),
+  }).index("by_entry", ["entryId"]),
+
+  notifications: defineTable({
+    recipientId: v.id("members"),
+    actorId: v.id("members"),
+    kind: v.union(v.literal("response"), v.literal("report_comment"), v.literal("report_status")),
+    text: v.string(),
+    entryId: v.optional(v.id("entries")),
+    reportId: v.optional(v.id("reports")),
+    createdAt: v.number(),
+    readAt: v.optional(v.number()),
+  }).index("by_recipient", ["recipientId", "createdAt"]),
 
   comments: defineTable({
     reportId: v.id("reports"),

@@ -103,7 +103,7 @@ function MemberRow({ m, onEdit }: { m: Doc<"members">; onEdit: () => void }) {
     <div className="item" style={{ gridTemplateColumns: "40px minmax(0,1fr) auto", opacity: m.active ? 1 : 0.55 }}>
       <span className="avatar">{initials(m.name)}</span>
       <div>
-        <div className="title">{m.name}</div>
+        <div className="title"><a href={`/people/${m._id}`} className="tag-link">{m.name}</a></div>
         <div className="small faint">{m.email || "No email yet"}</div>
         <div className="tags">
           <span>{ROLE_LABEL[m.role]}</span>

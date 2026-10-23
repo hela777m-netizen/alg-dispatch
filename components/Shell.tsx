@@ -3,11 +3,13 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Authenticated, AuthLoading, Unauthenticated, useAction, useQuery } from "convex/react";
+import { Authenticated, AuthLoading, Unauthenticated, useAction, useMutation, useQuery } from "convex/react";
 import { SignOutButton, UserButton, useAuth, useUser } from "@clerk/nextjs";
 import { api } from "@/convex/_generated/api";
 import { AppContext, useApp, type AppState } from "./AppContext";
 import Logo from "./Logo";
+import { useClock } from "@/lib/useClock";
+import { cycleOf, todayISO } from "@/convex/lib/cycles";
 import { MyPresence } from "./Presence";
 
 export default function Shell({ children }: { children: React.ReactNode }) {
@@ -115,7 +117,26 @@ function Gate({ children }: { children: React.ReactNode }) {
 type MeMember = Extract<NonNullable<ReturnType<typeof useQuery<typeof api.members.me>>>, { state: "member" }>;
 
 function App({ me, children }: { me: MeMember; children: React.ReactNode }) {
-  const [cycle, setCycle] = useState(me.cycle);
+  const applyFixes = useMutation(api.members.applyFixes);
+  const fixed = useRef(false);
+  useEffect(() => {
+    if (me.member.role === "owner" && !fixed.current) {
+      fixed.current = true;
+      applyFixes({}).catch(() => {});
+    }
+  }, [me.member.role, applyFixes]);
+  const now = useClock();
+  const today = todayISO(now.getTime());
+  const liveCycle = cycleOf(today, me.anchor);
+  const [cycle, setCycle] = useState(liveCycle);
+  // When a new cycle starts while the page is open, move with it if you were on the current one.
+  const lastLive = useRef(liveCycle);
+  useEffect(() => {
+    if (liveCycle !== lastLive.current) {
+      setCycle((c) => (c === lastLive.current ? liveCycle : c));
+      lastLive.current = liveCycle;
+    }
+  }, [liveCycle]);
   const [toastMsg, setToastMsg] = useState<string | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout>>(undefined);
   const toast = useCallback((m: string) => {
@@ -134,8 +155,8 @@ function App({ me, children }: { me: MeMember; children: React.ReactNode }) {
       member: me.member,
       geographies: me.geographies,
       anchor: me.anchor,
-      today: me.today,
-      currentCycle: me.cycle,
+      today,
+      currentCycle: liveCycle,
       cycle,
       setCycle,
       geoName: (k: string) => names.get(k) ?? k,
@@ -144,7 +165,7 @@ function App({ me, children }: { me: MeMember; children: React.ReactNode }) {
       isOwner: me.member.role === "owner",
       toast,
     };
-  }, [me, cycle, toast]);
+  }, [me, cycle, toast, today, liveCycle]);
 
   return (
     <AppContext.Provider value={value}>

@@ -6,8 +6,13 @@ import { useEffect, useState } from "react";
 export function useClock() {
   const [now, setNow] = useState(() => new Date());
   useEffect(() => {
-    const t = setInterval(() => setNow(new Date()), 30_000);
-    return () => clearInterval(t);
+    let t: ReturnType<typeof setTimeout>;
+    const tick = () => {
+      setNow(new Date());
+      t = setTimeout(tick, 60_000 - (Date.now() % 60_000) + 50);
+    };
+    t = setTimeout(tick, 60_000 - (Date.now() % 60_000) + 50);
+    return () => clearTimeout(t);
   }, []);
   return now;
 }

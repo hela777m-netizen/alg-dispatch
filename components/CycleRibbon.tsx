@@ -3,6 +3,23 @@
 import { useApp } from "./AppContext";
 import { cycleDays, cycleRange } from "@/convex/lib/cycles";
 import { dayParts, rangeLabel } from "@/lib/format";
+import { useClock } from "@/lib/useClock";
+
+/** Today's date and time where the viewer is, kept live. */
+export function LiveDate() {
+  const now = useClock();
+  const zone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  const NAMES: Record<string, string> = { "Asia/Dubai": "UAE", "Asia/Riyadh": "Saudi", "Europe/London": "UK", "America/Sao_Paulo": "São Paulo", "America/New_York": "New York" };
+  const city = NAMES[zone] ?? zone.split("/").pop()?.replace(/_/g, " ") ?? "";
+  const date = new Intl.DateTimeFormat("en-GB", { weekday: "long", day: "numeric", month: "long", year: "numeric" }).format(now);
+  const time = new Intl.DateTimeFormat("en-GB", { hour: "2-digit", minute: "2-digit" }).format(now);
+  return (
+    <p className="live-date" suppressHydrationWarning>
+      <time dateTime={now.toISOString()}>{date}, {time}</time>
+      {city && <span className="faint"> {city} time</span>}
+    </p>
+  );
+}
 
 export default function CycleRibbon({
   perDay = {},
@@ -24,6 +41,7 @@ export default function CycleRibbon({
     <section className="ribbon-wrap" aria-label="Reporting cycle">
       <div className="page-head" style={{ marginBottom: 6 }}>
         <div>
+          <LiveDate />
           <h1 className="headline">{title ?? rangeLabel(start, end)}</h1>
           <p className="muted">
             {note ??

@@ -3,6 +3,7 @@
   /* Al Liwan brand: navy arch, warm grey wordmark */
   --brand: #0b3b80;
   --brand-ink: #ffffff;
+  --brand-text: #0b3b80;
   --paper: #f3f3f1;
   --surface: #fbfbfa;
   --sunk: #e8e8e5;
@@ -45,6 +46,7 @@
   :root {
     --brand: #2c5aa8;
     --brand-ink: #ffffff;
+    --brand-text: #8fb0ee;
     --paper: #0c1424;
     --surface: #131d31;
     --sunk: #1a263d;
@@ -104,7 +106,8 @@ button, input, textarea, select { font: inherit; color: inherit; }
   font-family: var(--display);
   font-weight: 700; font-size: 22px; line-height: 1.08; letter-spacing: -0.025em;
 }
-.mark .mark-word { display: block; }
+.mark .mark-word { display: block; color: var(--brand-text); }
+.live-date { margin: 0 0 10px; font-size: 13.5px; font-weight: 600; color: var(--brand-text); }
 .mark-sub { display: block; margin-top: 6px; font-size: 13px; color: var(--ink-3); }
 .nav { display: flex; flex-direction: column; gap: 2px; }
 .nav a {
@@ -131,7 +134,7 @@ button, input, textarea, select { font: inherit; color: inherit; }
   .rail { display: none; }
   .main { padding: 20px 16px 96px; }
   .topbar { display: flex; align-items: center; justify-content: space-between; margin-bottom: 18px; }
-  .topbar .mark-word { font-size: 17px; }
+  .topbar .mark-word { font-size: 17px; color: var(--brand-text); }
   .tabbar {
     display: grid; grid-auto-flow: column; grid-auto-columns: 1fr;
     position: fixed; inset: auto 0 0 0; z-index: 20;

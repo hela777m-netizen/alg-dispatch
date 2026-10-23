@@ -320,3 +320,14 @@ export const team = query({
       }));
   },
 });
+
+/** One-off data fixes the owner's app applies on load. Safe to run repeatedly. */
+export const applyFixes = mutation({
+  args: {},
+  handler: async (ctx) => {
+    const me = await currentMember(ctx);
+    if (!me || me.role !== "owner") return;
+    const ny = await ctx.db.query("geographies").withIndex("by_key", (q) => q.eq("key", "new-york")).unique();
+    if (ny && ny.name === "New York") await ctx.db.patch(ny._id, { name: "United States", region: "New York" });
+  },
+});

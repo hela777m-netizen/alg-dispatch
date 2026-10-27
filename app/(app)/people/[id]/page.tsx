@@ -26,7 +26,7 @@ export default function PersonPage({ params }: { params: Promise<{ id: string }>
   const isMe = person._id === member._id;
   const thisCycle = entries?.filter((e) => e.cycle === currentCycle);
   const earlier = entries?.filter((e) => e.cycle < currentCycle);
-  const geos = [...person.geographies, ...(person.role === "reporter" ? person.extraGeographies : [])];
+  const geos = person.geographies;
   const blockers = thisCycle?.filter((e) => e.kind === "blocker" || e.kind === "ask").length ?? 0;
 
   return (
@@ -37,7 +37,8 @@ export default function PersonPage({ params }: { params: Promise<{ id: string }>
           <p className="muted">
             {ROLE[person.role]}
             {person.title ? `, ${person.title}` : ""}
-            {!person.linked ? ". Hasn't signed in yet." : ""}
+            {person.reportsToName ? `. Reports to ${person.reportsToName}` : ""}
+            {person.left ? ". Has left ALG." : !person.linked ? ". Hasn't signed in yet." : ""}
           </p>
           <div style={{ marginTop: 14 }}>{isMe ? <MyPresence variant="card" /> : <PresenceTag p={person} />}</div>
         </div>

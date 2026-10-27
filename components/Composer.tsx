@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useAction, useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { useApp } from "./AppContext";
@@ -30,6 +30,9 @@ export default function Composer({ defaultGeography }: { defaultGeography: strin
   const structure = useAction(api.ai.structure);
   const fromDocument = useAction(api.ai.fromDocument);
   const uploadUrl = useMutation(api.files.uploadUrl);
+  const registerUpload = useMutation(api.files.register);
+  // One code per batch, reused on retry, so a save that reached the server is never stored twice.
+  const requestId = useRef<string | null>(null);
   const addMany = useMutation(api.entries.addMany);
   const dictation = useDictation((phrase) => {
     setUsedVoice(true);
@@ -64,6 +67,7 @@ export default function Composer({ defaultGeography }: { defaultGeography: strin
         const res = await fetch(url, { method: "POST", headers: { "Content-Type": "application/pdf" }, body: file });
         if (!res.ok) throw new Error("The upload failed. Try again.");
         const { storageId } = (await res.json()) as { storageId: string };
+        await registerUpload({ storageId: storageId as never });
         result = await fromDocument({ storageId: storageId as never, defaultGeography });
       } else if (name.endsWith(".docx")) {
         const mammoth = await import("mammoth/mammoth.browser");
@@ -87,7 +91,9 @@ export default function Composer({ defaultGeography }: { defaultGeography: strin
     setErr(null);
     setBusy("saving");
     try {
-      await addMany({ entries: list.map(tidy), source });
+      requestId.current ??= crypto.randomUUID();
+      await addMany({ entries: list.map(tidy), source, requestId: requestId.current });
+      requestId.current = null;
       toast(list.length === 1 ? "Update logged" : `${list.length} updates logged`);
       return true;
     } catch (e) {

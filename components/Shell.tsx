@@ -46,10 +46,10 @@ function SignedOutOrMismatch() {
     <div className="center-screen">
       <div className="gate">
         <div className="mark-word">Reporting<br />Dashboard</div>
-        <p className="h2">Signed in, but the database didn&apos;t accept it</p>
+        <p className="h2">We couldn&apos;t open your dashboard</p>
         <p className="muted">
-          Clerk signed you in, but Convex rejected the login pass. In Clerk, check the Convex integration is active.
-          In Convex Production, check CLERK_JWT_ISSUER_DOMAIN matches this Clerk app&apos;s Frontend API URL exactly.
+          You&apos;re signed in, but the dashboard couldn&apos;t confirm your access. Try again in a minute. If it keeps happening,
+          contact the dashboard administrator and quote reference SIGNIN-TOKEN.
         </p>
         <div className="row">
           <SignOutButton>
@@ -97,11 +97,11 @@ function Gate({ children }: { children: React.ReactNode }) {
     <div className="center-screen">
       <div className="gate">
         <div className="mark-word">Reporting<br />Dashboard</div>
-        <p className="h2">{setupProblem ? "Sign-in isn't fully set up" : "You're not on the team list yet"}</p>
+        <p className="h2">{setupProblem ? "We couldn't confirm your email" : "This email doesn't have access"}</p>
         <p className="muted">
           {setupProblem
-            ? "The database can't confirm your email. Check CLERK_SECRET_KEY in the Convex settings."
-            : `Signed in as ${email ?? "an unknown email"}. Ask Hela to add this email on the Team page, then sign in again.`}
+            ? "Try again in a minute. If it keeps happening, contact the dashboard administrator and quote reference SIGNIN-EMAIL."
+            : `You're signed in as ${email ?? "an unknown email"}, which isn't on the team list or has had its access switched off. Contact the dashboard administrator if you think this is wrong.`}
         </p>
         <div className="row">
           <SignOutButton>
@@ -148,9 +148,9 @@ function App({ me, children }: { me: MeMember; children: React.ReactNode }) {
   const value: AppState = useMemo(() => {
     const isLead = me.member.role === "owner" || me.member.role === "manager";
     const names = new Map(me.geographies.map((g) => [g.key, g.name]));
-    const loggable = me.geographies.filter(
-      (g) => isLead || me.member.geographies.includes(g.key) || me.member.extraGeographies.includes(g.key),
-    );
+    // Anyone can post to any office or market; their own geographies come first in the picker.
+    const own = (k: string) => me.member.geographies.includes(k) || me.member.extraGeographies.includes(k);
+    const loggable = [...me.geographies.filter((g) => own(g.key)), ...me.geographies.filter((g) => !own(g.key))];
     return {
       member: me.member,
       geographies: me.geographies,
@@ -172,6 +172,7 @@ function App({ me, children }: { me: MeMember; children: React.ReactNode }) {
       <div className="shell">
         <Rail />
         <main className="main">
+          <TestBanner />
           <div className="topbar">
             <Link href="/" className="mark"><span className="mark-word">Reporting<br />Dashboard</span></Link>
             <UserButton />
@@ -182,6 +183,16 @@ function App({ me, children }: { me: MeMember; children: React.ReactNode }) {
       </div>
       {toastMsg && <div className="toast" role="status">{toastMsg}</div>}
     </AppContext.Provider>
+  );
+}
+
+/** Shown on every deployment that isn't the approved production one, so nobody mistakes it for the real system. */
+function TestBanner() {
+  if (process.env.NEXT_PUBLIC_DEPLOYMENT === "production") return null;
+  return (
+    <p className="test-banner" role="note">
+      Test environment. Use made-up or non-confidential information only.
+    </p>
   );
 }
 

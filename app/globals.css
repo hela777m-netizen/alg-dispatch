@@ -398,6 +398,8 @@ button, input, textarea, select { font: inherit; color: inherit; }
 .pin-submitted .pin-dot { fill: var(--lapis); }
 .pin-pending .pin-dot { fill: var(--wait); }
 .pin-none .pin-dot { fill: var(--ink-3); }
+.pin-market .pin-dot { fill: var(--brand); stroke-width: 2; }
+.pin-market .pin-label { font-size: 12px; opacity: .85; }
 .pin-ring { fill: none; stroke: var(--alert); stroke-width: 2; }
 .pin-label { font-size: 17px; font-weight: 600; fill: var(--ink-2); paint-order: stroke; stroke: var(--surface); stroke-width: 4px; stroke-linejoin: round; pointer-events: none; }
 .pin:hover .pin-label, .pin.is-active .pin-label { fill: var(--ink); }
@@ -409,6 +411,7 @@ button, input, textarea, select { font: inherit; color: inherit; }
 .lg-submitted { background: var(--lapis); }
 .lg-pending { background: var(--wait); }
 .lg-ring { border: 2px solid var(--alert); width: 12px; height: 12px; }
+.lg-market { background: var(--brand); width: 7px; height: 7px; }
 .panel-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
 .panel-list .title { font-weight: 600; font-size: 14px; }
 .panel-list .tags { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 3px; font-size: 12.5px; color: var(--ink-3); }
@@ -466,3 +469,24 @@ button, input, textarea, select { font: inherit; color: inherit; }
 .inbox-item:first-child { border-top: 0; }
 .inbox-item:hover { background: var(--sunk); }
 .inbox-item .unread { width: 8px; height: 8px; border-radius: 50%; background: var(--lapis); margin-top: 7px; }
+
+/* Lifecycle, availability and test-environment additions */
+.test-banner { margin: 0 0 14px; padding: 8px 14px; border-radius: 10px; background: var(--wait-soft); color: var(--wait); font-size: 13px; font-weight: 500; }
+.link-btn { background: none; border: 0; padding: 0; color: var(--brand-text); font: inherit; cursor: pointer; text-decoration: underline; text-underline-offset: 2px; }
+.link-btn:hover { text-decoration-thickness: 2px; }
+.eyebrow { margin: 0; font-size: 12px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--ink-2); }
+.presence-pop .plans { border-top: 1px solid var(--line); padding-top: 12px; }
+.avail { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 18px; margin-top: 12px; padding: 14px 18px; background: var(--surface); border-radius: var(--r-panel); }
+.avail ul { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 6px; font-size: 14px; }
+.avail a { color: var(--ink); font-weight: 500; text-decoration: none; }
+.avail a:hover { text-decoration: underline; }
+.avail-date { display: inline-block; min-width: 92px; color: var(--ink-2); font-variant-numeric: tabular-nums; }
+@media (max-width: 760px) { .avail { grid-template-columns: 1fr; } }
+.access-card { display: grid; grid-template-columns: max-content 1fr; gap: 4px 14px; font-size: 14px; margin: 0; }
+.access-card dt { color: var(--ink-2); }
+.access-card dd { margin: 0; }
+.history { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; font-size: 13px; }
+.history time { color: var(--ink-2); margin-right: 8px; font-variant-numeric: tabular-nums; }
+.status-pill { font-weight: 500; }
+.status-pill.warn { color: var(--wait); }
+.status-pill.off { color: var(--ink-2); }

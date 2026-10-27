@@ -1,5 +1,5 @@
 import { v, ConvexError } from "convex/values";
-import { action } from "./_generated/server";
+import { action, type ActionCtx } from "./_generated/server";
 import { internal } from "./_generated/api";
 
 const MODEL = () => process.env.ANTHROPIC_MODEL || "claude-sonnet-5-5";
@@ -11,32 +11,72 @@ const STYLE = [
   "Never invent facts, names, figures or dates that the speaker did not give.",
 ].join(" ");
 
-async function callClaude(body: Record<string, unknown>) {
+/** Short reference code for an error, shown to the user and written to the server log. */
+function ref() {
+  return `AI-${Math.random().toString(36).slice(2, 8).toUpperCase()}`;
+}
+
+/**
+ * Calls the Claude API. Users get a plain message with a reference code; the owner also
+ * gets the setting-level reason. The log gets the status and reference, never the prompt.
+ */
+async function callClaude(body: Record<string, unknown>, isOwner: boolean) {
+  const code = ref();
+  const fail = (forOwner: string): never => {
+    throw new ConvexError(
+      isOwner
+        ? `${forOwner} (ref ${code})`
+        : `AI is unavailable right now (ref ${code}). You can carry on by typing your update.`,
+    );
+  };
   const key = process.env.ANTHROPIC_API_KEY;
-  if (!key) throw new ConvexError("Voice structuring isn't set up yet. Add ANTHROPIC_API_KEY in Convex.");
-  const res = await fetch("https://api.anthropic.com/v1/messages", {
-    method: "POST",
-    headers: {
-      "content-type": "application/json",
-      "x-api-key": key,
-      "anthropic-version": "2023-06-01",
-    },
-    body: JSON.stringify({ model: MODEL(), ...body }),
-  });
+  if (!key) {
+    console.error(`[${code}] AI not configured: ANTHROPIC_API_KEY missing`);
+    fail("AI isn't set up: ANTHROPIC_API_KEY is missing in Convex.");
+  }
+  let res: Response;
+  try {
+    res = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-api-key": key!,
+        "anthropic-version": "2023-06-01",
+      },
+      body: JSON.stringify({ model: MODEL(), ...body }),
+    });
+  } catch {
+    console.error(`[${code}] Claude API unreachable`);
+    return fail("Couldn't reach the Claude API.");
+  }
   if (!res.ok) {
-    const detail = await res.text();
-    console.error("Claude API error", res.status, detail.slice(0, 500));
-    if (res.status === 401) throw new ConvexError("The Claude API key was rejected. Check ANTHROPIC_API_KEY in Convex.");
-    if (res.status === 429) throw new ConvexError("Too many requests right now. Try again in a minute.");
     let reason = "";
     try {
-      reason = (JSON.parse(detail) as { error?: { message?: string } }).error?.message ?? "";
+      reason = ((await res.json()) as { error?: { message?: string } }).error?.message ?? "";
     } catch { /* not JSON */ }
-    if (/credit balance/i.test(reason)) throw new ConvexError("The Claude account has no credit. Add credit at console.anthropic.com > Billing.");
-    if (res.status === 404) throw new ConvexError(`Claude model not found (${MODEL()}). Set ANTHROPIC_MODEL in Convex to a current model.`);
-    throw new ConvexError(`Couldn't reach Claude (${res.status}${reason ? `: ${reason.slice(0, 160)}` : ""}).`);
+    console.error(`[${code}] Claude API error ${res.status}`);
+    if (res.status === 429) {
+      throw new ConvexError(`Too many AI requests right now (ref ${code}). Try again in a minute, or carry on by typing.`);
+    }
+    if (res.status === 401) fail("The Claude API key was rejected. Check ANTHROPIC_API_KEY in Convex.");
+    if (/credit balance/i.test(reason)) fail("The Claude account has no credit. Add credit in the Anthropic console.");
+    if (res.status === 404) fail(`Claude model not found (${MODEL()}). Set ANTHROPIC_MODEL in Convex to a current model.`);
+    fail(`Claude returned ${res.status}${reason ? `: ${reason.slice(0, 160)}` : ""}.`);
   }
   return (await res.json()) as { content: { type: string; text?: string; input?: unknown }[] };
+}
+
+/** Runs an AI call and writes one audit row with its size and outcome. */
+async function logged<T>(ctx: ActionCtx, action: string, size: number, run: () => Promise<T>): Promise<T> {
+  try {
+    const out = await run();
+    await ctx.runMutation(internal.aiData.logCall, { action, size, ok: true });
+    return out;
+  } catch (e) {
+    const m = e instanceof ConvexError && typeof e.data === "string" ? e.data.match(/ref (AI-[A-Z0-9]+)/) : null;
+    await ctx.runMutation(internal.aiData.logCall, { action, size, ok: false, ref: m?.[1] });
+    throw e;
+  }
 }
 
 const ENTRY_SCHEMA = {
@@ -82,6 +122,7 @@ export type StructuredEntry = {
 };
 type AiContext = {
   name: string;
+  isOwner: boolean;
   today: string;
   location?: string;
   geographies: { key: string; name: string; region: string }[];
@@ -117,7 +158,7 @@ async function extractEntries(
     tools: [{ name: "record_entries", description: "Record the structured entries.", input_schema: ENTRY_SCHEMA }],
     tool_choice: { type: "auto" },
     messages: [{ role: "user", content }],
-  });
+  }, me.isOwner);
   const call = result.content.find((c) => c.type === "tool_use");
   let parsed = (call?.input as { entries?: unknown[] } | undefined)?.entries ?? [];
   if (!call) {
@@ -158,35 +199,44 @@ export const structure = action({
     if (!me) throw new ConvexError("You don't have access to this dashboard yet.");
     const input = text.trim().slice(0, 40000);
     if (input.length < 8) throw new ConvexError("Say or type a bit more first.");
-    return await extractEntries(me, input, defaultGeography, "The input is spoken or typed notes.");
+    return await logged(ctx, "structure", input.length, () =>
+      extractEntries(me, input, defaultGeography, "The input is spoken or typed notes."),
+    );
   },
 });
 
-/** Reads an uploaded report (PDF) and returns structured updates for review. */
+/** Reads an uploaded report (PDF) and returns structured updates for review. Only the uploader can have it read. */
 export const fromDocument = action({
   args: { storageId: v.id("_storage"), defaultGeography: v.string() },
   handler: async (ctx, { storageId, defaultGeography }): Promise<StructuredEntry[]> => {
     const me: AiContext = await ctx.runQuery(internal.aiData.context, {});
     if (!me) throw new ConvexError("You don't have access to this dashboard yet.");
-    const blob = await ctx.storage.get(storageId);
-    if (!blob) throw new ConvexError("The upload didn't arrive. Try again.");
+    const upload: { size: number; contentType?: string } | null = await ctx.runQuery(internal.aiData.ownUpload, { storageId });
+    if (!upload) throw new ConvexError("That upload isn't available. Upload the file again.");
     try {
-      if (blob.size > 8 * 1024 * 1024) throw new ConvexError("That file is over 8 MB. Export a smaller PDF or split it.");
+      if (upload.size > 8 * 1024 * 1024) throw new ConvexError("That file is over 8 MB. Export a smaller PDF or split it.");
+      if (upload.contentType && upload.contentType !== "application/pdf") throw new ConvexError("Upload a PDF, or a Word file.");
+      const blob = await ctx.storage.get(storageId);
+      if (!blob) throw new ConvexError("The upload didn't arrive. Try again.");
       const bytes = new Uint8Array(await blob.arrayBuffer());
+      if (String.fromCharCode(...bytes.subarray(0, 5)) !== "%PDF-") throw new ConvexError("That file isn't a readable PDF.");
       let binary = "";
       for (let i = 0; i < bytes.length; i += 0x8000) binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
       const data = btoa(binary);
-      return await extractEntries(
-        me,
-        [
-          { type: "document", source: { type: "base64", media_type: "application/pdf", data } },
-          { type: "text", text: "Extract the reporting entries from this report." },
-        ],
-        defaultGeography,
-        "The input is an existing written report, possibly with fixed sections and headings. Map its sections to entry types. Use dates written in the report where given; otherwise use today.",
+      return await logged(ctx, "fromDocument", bytes.length, () =>
+        extractEntries(
+          me,
+          [
+            { type: "document", source: { type: "base64", media_type: "application/pdf", data } },
+            { type: "text", text: "Extract the reporting entries from this report." },
+          ],
+          defaultGeography,
+          "The input is an existing written report, possibly with fixed sections and headings. Map its sections to entry types. Use dates written in the report where given; otherwise use today.",
+        ),
       );
     } finally {
       await ctx.storage.delete(storageId);
+      await ctx.runMutation(internal.aiData.forgetUpload, { storageId });
     }
   },
 });
@@ -199,7 +249,7 @@ export const polish = action({
     if (!me) throw new ConvexError("You don't have access to this dashboard yet.");
     const input = text.trim().slice(0, 6000);
     if (input.length < 4) throw new ConvexError("Say or type a bit more first.");
-    const result = await callClaude({
+    const result = await logged(ctx, "polish", input.length, () => callClaude({
       max_tokens: 800,
       system: [
         `You tidy a spoken reply from ${me.name} into a short written message to a colleague.`,
@@ -211,7 +261,7 @@ export const polish = action({
         STYLE,
       ].join("\n"),
       messages: [{ role: "user", content: input }],
-    });
+    }, me.isOwner));
     return result.content.filter((c) => c.type === "text").map((c) => c.text).join("\n").trim();
   },
 });
@@ -227,8 +277,10 @@ type CycleData = {
 export const draftSummary = action({
   args: { geography: v.string(), cycle: v.number() },
   handler: async (ctx, { geography, cycle }): Promise<string> => {
+    const me: AiContext = await ctx.runQuery(internal.aiData.context, {});
+    if (!me) throw new ConvexError("You don't have access to this dashboard yet.");
     const data: CycleData = await ctx.runQuery(internal.aiData.cycleEntries, { geography, cycle });
-    if (!data) throw new ConvexError("You don't report on that geography.");
+    if (!data) throw new ConvexError("Pick a geography from the list.");
     if (data.entries.length === 0) throw new ConvexError("Log a few updates first, then draft the report.");
 
     const lines = data.entries
@@ -243,7 +295,7 @@ export const draftSummary = action({
       )
       .join("\n");
 
-    const result = await callClaude({
+    const result = await logged(ctx, "draftSummary", lines.length, () => callClaude({
       max_tokens: 1500,
       system: [
         `You write the biweekly report for ${data.geographyName}, covering ${data.range.start} to ${data.range.end}, on behalf of ${data.name}.`,
@@ -252,7 +304,7 @@ export const draftSummary = action({
         STYLE,
       ].join("\n"),
       messages: [{ role: "user", content: `Entries:\n${lines}` }],
-    });
+    }, me.isOwner));
     return result.content.filter((c) => c.type === "text").map((c) => c.text).join("\n").trim();
   },
 });

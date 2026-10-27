@@ -2,6 +2,7 @@ import { ConvexError } from "convex/values";
 import type { Doc } from "../_generated/dataModel";
 import type { QueryCtx, MutationCtx } from "../_generated/server";
 import { DEFAULT_ANCHOR } from "./cycles";
+import { countryById } from "./countries";
 
 type Ctx = QueryCtx | MutationCtx;
 
@@ -40,15 +41,71 @@ export function isLead(member: Doc<"members">): boolean {
   return member.role === "owner" || member.role === "manager";
 }
 
-/** Geographies a member may log updates against. */
-export function canLogTo(member: Doc<"members">, geography: string): boolean {
-  if (isLead(member)) return true;
-  return member.geographies.includes(geography) || member.extraGeographies.includes(geography);
+/**
+ * Geographic visibility: leads see every geography; everyone else sees the geographies
+ * assigned to them. Where someone posts never widens what they can see.
+ */
+export function canSee(member: Doc<"members">, geography: string): boolean {
+  return isLead(member) || member.geographies.includes(geography);
 }
 
-/** Geographies whose activity a member can read. Reporters see their own geographies' team activity. */
-export function canSee(member: Doc<"members">, geography: string): boolean {
-  return canLogTo(member, geography);
+/** One update: visible if its geography is visible, or the viewer wrote it. */
+export function canSeeEntry(member: Doc<"members">, entry: Doc<"entries">): boolean {
+  return entry.authorId === member._id || canSee(member, entry.geography);
+}
+
+/** Plain-language summary of what a member can do. Built from the same rules the server enforces. */
+export function effectiveAccess(member: Doc<"members">) {
+  const lead = isLead(member);
+  return {
+    sees: lead ? "all" : member.geographies,
+    postsTo: "any",
+    reviewsReports: lead,
+    administers: member.role === "owner",
+  } as const;
+}
+
+/**
+ * Resolves the geography an update belongs to. Any office or market in the register is fine.
+ * "iso:NNN" picks a country: an existing geography for that country, or a new market,
+ * never an office. Returns the geography key.
+ */
+export async function resolveGeography(
+  ctx: MutationCtx,
+  geography: string,
+  onCreate?: (g: Doc<"geographies">) => Promise<void>,
+): Promise<string> {
+  if (geography.startsWith("iso:")) {
+    const country = countryById(geography.slice(4));
+    if (!country) throw new ConvexError("Pick a country from the list.");
+    const existing = await ctx.db.query("geographies").withIndex("by_country", (q) => q.eq("country", country.id)).first();
+    if (existing) {
+      if (!existing.active) throw new ConvexError(`${existing.name} is switched off on the Team page. Ask the administrator to switch it back on.`);
+      return existing.key;
+    }
+    let key = country.name.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+    if (await ctx.db.query("geographies").withIndex("by_key", (q) => q.eq("key", key)).first()) key = `${key}-${country.id}`;
+    const count = (await ctx.db.query("geographies").collect()).length;
+    const id = await ctx.db.insert("geographies", {
+      key, name: country.name, region: "", timezone: "UTC", lat: country.lat, lng: country.lng,
+      order: count, active: true, office: false, country: country.id,
+    });
+    if (onCreate) await onCreate((await ctx.db.get(id))!);
+    return key;
+  }
+  const geo = await ctx.db.query("geographies").withIndex("by_key", (q) => q.eq("key", geography)).unique();
+  if (!geo || !geo.active) throw new ConvexError("Pick a geography from the list.");
+  return geo.key;
+}
+
+/** Read-only check that a geography key exists and is active. */
+export async function geographyExists(ctx: Ctx, key: string): Promise<boolean> {
+  const geo = await ctx.db.query("geographies").withIndex("by_key", (q) => q.eq("key", key)).unique();
+  return Boolean(geo?.active);
+}
+
+export function isOffice(g: Doc<"geographies">): boolean {
+  return g.office !== false;
 }
 
 export async function getAnchor(ctx: Ctx): Promise<string> {

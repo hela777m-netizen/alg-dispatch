@@ -1,14 +1,15 @@
 import { v, ConvexError } from "convex/values";
 import { mutation, query } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
-import type { QueryCtx } from "./_generated/server";
-import { canLogTo, canSee, clean, getAnchor, isLead, requireMember } from "./lib/access";
+import type { MutationCtx, QueryCtx } from "./_generated/server";
+import { canSee, canSeeEntry, clean, getAnchor, isLead, requireMember, resolveGeography } from "./lib/access";
+import { audit } from "./lib/audit";
 import { notify } from "./lib/notify";
 import { cycleOf } from "./lib/cycles";
 import { kindValidator, stageValidator } from "./schema";
 
 const entryFields = {
-  geography: v.string(),
+  geography: v.string(), // a geography key, or "iso:NNN" to post to any country
   kind: kindValidator,
   title: v.string(),
   details: v.optional(v.string()),
@@ -38,7 +39,6 @@ function normalise(input: EntryInput, anchor: string) {
     ? Math.round(input.dealValue * 100) / 100
     : undefined;
   return {
-    geography: input.geography,
     kind: input.kind,
     title,
     details: clean(input.details),
@@ -50,20 +50,39 @@ function normalise(input: EntryInput, anchor: string) {
   };
 }
 
+/** Anyone may post to any office or market. Posting never widens what they can see. */
+async function geographyFor(ctx: MutationCtx, me: Doc<"members">, geography: string) {
+  return await resolveGeography(ctx, geography, (g) =>
+    audit(ctx, me, "market.opened", { id: g._id, name: g.name }, "Opened from an update"),
+  );
+}
+
 export const addMany = mutation({
   args: {
     entries: v.array(v.object(entryFields)),
     source: v.union(v.literal("typed"), v.literal("voice")),
+    requestId: v.optional(v.string()),
   },
-  handler: async (ctx, { entries, source }) => {
+  handler: async (ctx, { entries, source, requestId }) => {
     const me = await requireMember(ctx);
     if (entries.length === 0) throw new ConvexError("Nothing to save.");
     if (entries.length > 30) throw new ConvexError("Save up to 30 updates at a time.");
+    // A retried save carries the same request code: return what was saved the first time.
+    if (requestId) {
+      const done = await ctx.db
+        .query("entries")
+        .withIndex("by_author_request", (q) => q.eq("authorId", me._id).eq("requestId", requestId))
+        .collect();
+      if (done.length > 0) return done.map((e) => e._id);
+    }
     const anchor = await getAnchor(ctx);
     const ids: Id<"entries">[] = [];
     for (const e of entries) {
-      if (!canLogTo(me, e.geography)) throw new ConvexError("You can only log updates for your own geographies.");
-      ids.push(await ctx.db.insert("entries", { ...normalise(e, anchor), authorId: me._id, source, updatedAt: Date.now() }));
+      const geography = await geographyFor(ctx, me, e.geography);
+      ids.push(await ctx.db.insert("entries", {
+        ...normalise(e, anchor), geography, authorId: me._id, source, updatedAt: Date.now(),
+        requestId: requestId?.slice(0, 64),
+      }));
     }
     return ids;
   },
@@ -76,13 +95,18 @@ export const update = mutation({
     const entry = await ctx.db.get(id);
     if (!entry) throw new ConvexError("That update was deleted.");
     if (entry.authorId !== me._id && me.role !== "owner") throw new ConvexError("You can only edit your own updates.");
-    if (!canLogTo(me, fields.geography)) throw new ConvexError("You can't move updates to that geography.");
+    const geography = await geographyFor(ctx, me, fields.geography);
     const anchor = await getAnchor(ctx);
     await ctx.db.patch(id, {
       ...normalise(fields, anchor),
+      geography,
       editedBy: entry.authorId === me._id ? undefined : me._id,
       updatedAt: Date.now(),
     });
+    if (entry.authorId !== me._id) {
+      const author = await ctx.db.get(entry.authorId);
+      await audit(ctx, me, "update.edited_by_owner", { id, name: author?.name }, `Geography ${entry.geography} to ${geography}`);
+    }
   },
 });
 
@@ -93,7 +117,17 @@ export const remove = mutation({
     const entry = await ctx.db.get(id);
     if (!entry) return;
     if (entry.authorId !== me._id && me.role !== "owner") throw new ConvexError("You can only delete your own updates.");
+    // Remove the replies and the notifications that quote them, so deleted text does not linger.
+    const replies = await ctx.db.query("responses").withIndex("by_entry", (q) => q.eq("entryId", id)).collect();
+    const recipients = new Set<Id<"members">>([entry.authorId, ...replies.map((r) => r.authorId)]);
+    for (const r of replies) await ctx.db.delete(r._id);
+    for (const to of recipients) {
+      const rows = await ctx.db.query("notifications").withIndex("by_recipient", (q) => q.eq("recipientId", to)).collect();
+      for (const n of rows) if (n.entryId === id) await ctx.db.delete(n._id);
+    }
     await ctx.db.delete(id);
+    const author = entry.authorId === me._id ? me : await ctx.db.get(entry.authorId);
+    await audit(ctx, me, "update.deleted", { id, name: author?.name }, `${entry.kind} in ${entry.geography}, ${replies.length} repl${replies.length === 1 ? "y" : "ies"} removed`);
   },
 });
 
@@ -114,7 +148,7 @@ export const responses = query({
   handler: async (ctx, { entryId }) => {
     const me = await requireMember(ctx);
     const entry = await ctx.db.get(entryId);
-    if (!entry || !canSee(me, entry.geography)) return [];
+    if (!entry || !canSeeEntry(me, entry)) return [];
     const rows = await ctx.db.query("responses").withIndex("by_entry", (q) => q.eq("entryId", entryId)).collect();
     return await Promise.all(
       rows.map(async (r) => ({ ...r, authorName: (await ctx.db.get(r.authorId))?.name ?? "Former member", mine: r.authorId === me._id })),
@@ -127,8 +161,7 @@ export const respond = mutation({
   handler: async (ctx, { entryId, body, source }) => {
     const me = await requireMember(ctx);
     const entry = await ctx.db.get(entryId);
-    if (!entry) throw new ConvexError("That update was deleted.");
-    if (!canSee(me, entry.geography)) throw new ConvexError("You can't respond to this update.");
+    if (!entry || !canSeeEntry(me, entry)) throw new ConvexError("You can't respond to this update.");
     const text = clean(body, 4000);
     if (!text) throw new ConvexError("Write or record a response first.");
     const earlier = await ctx.db.query("responses").withIndex("by_entry", (q) => q.eq("entryId", entryId)).collect();
@@ -153,7 +186,7 @@ export const forPerson = query({
   },
 });
 
-/** Updates in one cycle, limited to what the viewer may see. */
+/** Updates in one cycle, limited to what the viewer may see. Own updates are always visible. */
 export const forCycle = query({
   args: {
     cycle: v.number(),
@@ -167,11 +200,11 @@ export const forCycle = query({
       rows = await ctx.db.query("entries").withIndex("by_author_cycle", (q) => q.eq("authorId", me._id).eq("cycle", cycle)).collect();
       if (geography) rows = rows.filter((r) => r.geography === geography);
     } else if (geography) {
-      if (!canSee(me, geography)) return [];
       rows = await ctx.db.query("entries").withIndex("by_geo_cycle", (q) => q.eq("geography", geography).eq("cycle", cycle)).collect();
+      if (!canSee(me, geography)) rows = rows.filter((r) => r.authorId === me._id);
     } else {
       rows = await ctx.db.query("entries").withIndex("by_cycle", (q) => q.eq("cycle", cycle)).collect();
-      if (!isLead(me)) rows = rows.filter((r) => canSee(me, r.geography));
+      rows = rows.filter((r) => canSeeEntry(me, r));
     }
     rows.sort((a, b) => b.date.localeCompare(a.date) || b._creationTime - a._creationTime);
     return await withAuthors(ctx, rows);

@@ -58,6 +58,10 @@ export default defineSchema({
     location: v.optional(v.string()),
     presenceUntil: v.optional(v.string()), // YYYY-MM-DD, mainly for leave and travel
     presenceUpdatedAt: v.optional(v.number()),
+    // Reporting manager, set by the owner.
+    reportsTo: v.optional(v.id("members")),
+    // Set when someone leaves ALG. Their history stays; access is off.
+    leftAt: v.optional(v.number()),
   })
     .index("by_email", ["email"])
     .index("by_userId", ["userId"]),
@@ -71,7 +75,13 @@ export default defineSchema({
     lng: v.optional(v.number()),
     order: v.number(),
     active: v.boolean(),
-  }).index("by_key", ["key"]),
+    // false = an activity market with no ALG office. Missing means office.
+    office: v.optional(v.boolean()),
+    // ISO 3166 numeric country code, for the map and the country picker.
+    country: v.optional(v.string()),
+  })
+    .index("by_key", ["key"])
+    .index("by_country", ["country"]),
 
   // Individual updates, logged any time.
   entries: defineTable({
@@ -88,8 +98,11 @@ export default defineSchema({
     source: v.union(v.literal("typed"), v.literal("voice")),
     editedBy: v.optional(v.id("members")),
     updatedAt: v.number(),
+    // Set by the browser per save, so a retried save cannot create duplicates.
+    requestId: v.optional(v.string()),
   })
     .index("by_cycle", ["cycle"])
+    .index("by_author_request", ["authorId", "requestId"])
     .index("by_author_cycle", ["authorId", "cycle"])
     .index("by_geo_cycle", ["geography", "cycle"]),
 
@@ -135,6 +148,41 @@ export default defineSchema({
     body: v.string(),
     createdAt: v.number(),
   }).index("by_report", ["reportId"]),
+
+  // Planned travel, leave and remote days. Scheduling only: never affects access.
+  availability: defineTable({
+    memberId: v.id("members"),
+    kind: v.union(v.literal("travel"), v.literal("leave"), v.literal("remote")),
+    start: v.string(), // YYYY-MM-DD
+    end: v.string(), // YYYY-MM-DD
+    place: v.optional(v.string()),
+    note: v.optional(v.string()), // short business context, travel only
+    updatedAt: v.number(),
+  })
+    .index("by_member", ["memberId", "start"])
+    .index("by_end", ["end"]),
+
+  // Files waiting to be read by AI. Removed after reading, or by the hourly cleanup.
+  uploads: defineTable({
+    storageId: v.id("_storage"),
+    ownerId: v.id("members"),
+    createdAt: v.number(),
+  })
+    .index("by_storage", ["storageId"])
+    .index("by_created", ["createdAt"]),
+
+  // Who changed what. Never holds update or report text, tokens or keys.
+  auditLog: defineTable({
+    at: v.number(),
+    actorId: v.optional(v.id("members")),
+    actorName: v.string(),
+    action: v.string(),
+    targetId: v.optional(v.string()),
+    targetName: v.optional(v.string()),
+    detail: v.optional(v.string()),
+  })
+    .index("by_at", ["at"])
+    .index("by_target", ["targetId", "at"]),
 
   settings: defineTable({
     key: v.string(),

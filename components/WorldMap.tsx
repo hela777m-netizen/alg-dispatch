@@ -47,6 +47,8 @@ type Geo = {
   timezone: string;
   lat?: number;
   lng?: number;
+  office?: boolean;
+  country?: string;
   total: number;
   counts: Record<Kind, number>;
 };
@@ -103,7 +105,10 @@ export default function WorldMap({
   }, []);
 
   const operating = new Map<string, string>();
-  for (const g of geos) for (const id of COUNTRIES[g.key] ?? []) operating.set(id, g.key);
+  for (const g of geos) {
+    if (g.office === false) continue; // markets are dots, not shaded offices
+    for (const id of COUNTRIES[g.key] ?? (g.country ? [g.country] : [])) operating.set(id, g.key);
+  }
 
   const pins = geos
     .map((g) => {
@@ -112,7 +117,7 @@ export default function WorldMap({
       const xy = project(pos[1], pos[0]);
       if (!xy) return null;
       const rows = roster.filter((r) => r.geography === g.key);
-      return { g, x: xy[0], y: xy[1], state: pinState(rows), blocked: g.counts.blocker > 0 };
+      return { g, x: xy[0], y: xy[1], state: pinState(rows), blocked: g.counts.blocker > 0, market: g.office === false };
     })
     .filter((p): p is NonNullable<typeof p> => p !== null);
 
@@ -141,11 +146,11 @@ export default function WorldMap({
               <g
                 key={p.g.key}
                 transform={`translate(${p.x.toFixed(1)} ${p.y.toFixed(1)})`}
-                className={`pin pin-${p.state} ${active ? "is-active" : ""}`}
+                className={`pin ${p.market ? "pin-market" : `pin-${p.state}`} ${active ? "is-active" : ""}`}
                 role="button"
                 tabIndex={0}
                 aria-pressed={active}
-                aria-label={`${p.g.name}: ${PIN_LABEL[p.state]}${p.blocked ? ", has blockers" : ""}`}
+                aria-label={`${p.g.name}: ${p.market ? `market, ${p.g.total} update${p.g.total === 1 ? "" : "s"}` : PIN_LABEL[p.state]}${p.blocked ? ", has blockers" : ""}`}
                 onClick={() => onSelect(active ? null : p.g.key)}
                 onKeyDown={(e) => {
                   if (e.key === "Enter" || e.key === " ") {
@@ -156,7 +161,7 @@ export default function WorldMap({
               >
                 <circle r="22" className="pin-hit" />
                 {p.blocked && <circle r="14" className="pin-ring" />}
-                <circle r={active ? 10 : 8} className="pin-dot" />
+                <circle r={p.market ? (active ? 7 : 5) : active ? 10 : 8} className="pin-dot" />
                 <text x={left ? -18 : 18} y="6" textAnchor={left ? "end" : "start"} className="pin-label">
                   {p.g.name}
                 </text>
@@ -169,6 +174,7 @@ export default function WorldMap({
           <span><i className="lg lg-submitted" />Sent</span>
           <span><i className="lg lg-pending" />Missing or draft</span>
           <span><i className="lg lg-ring" />Has blockers</span>
+          {geos.some((g) => g.office === false) && <span><i className="lg lg-market" />Market, no office</span>}
         </div>
         {unplaced.length > 0 && (
           <p className="small faint" style={{ margin: "6px 4px 0" }}>
@@ -224,7 +230,7 @@ function GeoSummary({
       <div className="row between" style={{ alignItems: "flex-start", flexWrap: "nowrap" }}>
         <div>
           <h3 className="h2">{geo.name}</h3>
-          <p className="small faint" style={{ margin: "4px 0 0" }}>{geo.region}, {localTime(geo.timezone, now)} local time</p>
+          <p className="small faint" style={{ margin: "4px 0 0" }}>{geo.office === false ? "Market, no ALG office" : `${geo.region}, ${localTime(geo.timezone, now)} local time`}</p>
         </div>
         <button className="icon-btn" aria-label="Close" onClick={onClose}>
           <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d="M2 2l8 8M10 2l-8 8" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" /></svg>

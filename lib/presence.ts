@@ -1,4 +1,5 @@
-export type Presence = "office" | "travelling" | "remote" | "leave";
+import { activePresence, currentStatus, type Presence, type Plan, type PlanKind } from "@/convex/lib/presence";
+export { activePresence, currentStatus, type Presence, type Plan, type PlanKind };
 
 export const PRESENCE_LABEL: Record<Presence, string> = {
   office: "In the office",
@@ -7,21 +8,15 @@ export const PRESENCE_LABEL: Record<Presence, string> = {
   leave: "On leave",
 };
 
+export const PLAN_LABEL: Record<PlanKind, string> = { travel: "Business travel", leave: "Leave", remote: "Working remotely" };
+
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-function short(date: string) {
+export function short(date: string) {
   const [, m, d] = date.split("-").map(Number);
   return `${d} ${MONTHS[m - 1]}`;
 }
 
 type P = { presence?: Presence; location?: string; presenceUntil?: string };
-
-/** Travel and leave lapse after their end date; office and remote stay until changed. */
-export function activePresence(p: P, today: string): P {
-  if ((p.presence === "leave" || p.presence === "travelling") && p.presenceUntil && p.presenceUntil < today) {
-    return { location: p.presence === "travelling" ? undefined : p.location };
-  }
-  return p;
-}
 
 export function presenceText(p: P, today: string): string | null {
   const a = activePresence(p, today);

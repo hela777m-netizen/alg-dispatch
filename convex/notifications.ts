@@ -1,6 +1,6 @@
 import { v } from "convex/values";
 import { mutation, query } from "./_generated/server";
-import { currentMember, requireMember } from "./lib/access";
+import { canSeeEntry, currentMember, requireMember } from "./lib/access";
 
 export const list = query({
   args: {},
@@ -13,7 +13,9 @@ export const list = query({
       .take(50);
     return await Promise.all(
       rows.map(async (n) => {
-        const entry = n.entryId ? await ctx.db.get(n.entryId) : null;
+        const found = n.entryId ? await ctx.db.get(n.entryId) : null;
+        // Titles of updates the viewer can no longer see are not shown.
+        const entry = found && canSeeEntry(me, found) ? found : null;
         const report = n.reportId ? await ctx.db.get(n.reportId) : null;
         return {
           ...n,

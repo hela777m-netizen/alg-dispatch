@@ -502,11 +502,11 @@ button, input, textarea, select { font: inherit; color: inherit; }
 
 /* Welcome screens: invitation and first-sign-in walkthrough */
 .welcome-art { position: relative; overflow: hidden; }
-.welcome-arch { position: absolute; right: -6%; bottom: -4%; height: 112%; width: auto; opacity: .12; pointer-events: none; }
+.welcome-arch { position: absolute; top: 0; right: 0; height: 100%; width: auto; opacity: .06; pointer-events: none; }
 .welcome-kicker { margin: 36px 0 10px; font-size: 13px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: #c9d7f2; }
 .welcome-title { margin: 0; font-size: clamp(34px, 4.2vw, 56px); line-height: 1.05; letter-spacing: -0.03em; font-weight: 600; }
 .welcome-points { position: relative; list-style: none; margin: 0; padding: 0; display: grid; gap: 14px; max-width: 40ch; font-size: 16px; line-height: 1.45; color: #e3eaf8; }
 .welcome-points b { color: #ffffff; font-weight: 600; }
 .accept { width: min(420px, 100%); display: grid; gap: 16px; }
 .accept-title { margin: 0; font-size: 28px; letter-spacing: -0.02em; }
-@media (max-width: 860px) { .welcome-points { display: none; } .welcome-title { font-size: 32px; } .welcome-arch { height: 140%; } }
+@media (max-width: 860px) { .welcome-points { display: none; } .welcome-title { font-size: 32px; } }

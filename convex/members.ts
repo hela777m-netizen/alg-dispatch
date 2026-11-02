@@ -3,6 +3,7 @@ import { action, internalMutation, internalQuery, mutation, query } from "./_gen
 import { internal } from "./_generated/api";
 import { currentMember, effectiveAccess, getAnchor, requireLead, requireMember, requireOwner, clean } from "./lib/access";
 import { audit } from "./lib/audit";
+import { notify } from "./lib/notify";
 import { currentStatus } from "./lib/presence";
 import { countryById } from "./lib/countries";
 import { presenceValidator, roleValidator } from "./schema";
@@ -568,5 +569,71 @@ export const remove = mutation({
     }
     await ctx.db.delete(id);
     await audit(ctx, me, "member.removed", { id, name: m.name }, m.email);
+  },
+});
+
+/** Names for the "who do you report to" picker: active colleagues only, no emails or IDs beyond the row. */
+export const directory = query({
+  args: {},
+  handler: async (ctx) => {
+    const me = await requireMember(ctx);
+    return (await ctx.db.query("members").collect())
+      .filter((m) => m.active && m._id !== me._id)
+      .sort((a, b) => a.name.localeCompare(b.name))
+      .map((m) => ({ _id: m._id, name: m.name, role: m.role }));
+  },
+});
+
+/**
+ * First sign-in walkthrough. The person sets their title, geographies, reporting manager and
+ * working city. It runs once; after that the owner manages these on the Team page.
+ * Owners are told when someone's choice changes what they can see.
+ */
+export const completeOnboarding = mutation({
+  args: {
+    title: v.optional(v.string()),
+    geographies: v.array(v.string()),
+    reportsTo: v.optional(v.id("members")),
+    location: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const me = await requireMember(ctx);
+    if (me.onboardedAt) throw new ConvexError("You've already set up your profile. Ask the dashboard owner to change it.");
+    const offices = new Set(
+      (await ctx.db.query("geographies").collect()).filter((g) => g.active && g.office !== false).map((g) => g.key),
+    );
+    const geographies = [...new Set(args.geographies)].filter((g) => offices.has(g));
+    if (me.role === "reporter" && geographies.length === 0) throw new ConvexError("Pick at least one geography.");
+    if (args.reportsTo) {
+      if (args.reportsTo === me._id) throw new ConvexError("Pick someone other than yourself.");
+      const boss = await ctx.db.get(args.reportsTo);
+      if (!boss || !boss.active) throw new ConvexError("Pick someone from the list.");
+    }
+    await ctx.db.patch(me._id, {
+      title: clean(args.title, 160),
+      geographies,
+      extraGeographies: me.extraGeographies.filter((g) => !geographies.includes(g)),
+      reportsTo: args.reportsTo,
+      location: clean(args.location, 80) ?? me.location,
+      onboardedAt: Date.now(),
+    });
+
+    const before = [...me.geographies].sort().join(", ");
+    const after = [...geographies].sort().join(", ");
+    const changes: string[] = [];
+    if (before !== after) changes.push(`geographies ${before || "none"} to ${after || "none"}`);
+    if (me.reportsTo !== args.reportsTo) {
+      const boss = args.reportsTo ? (await ctx.db.get(args.reportsTo))?.name : "nobody";
+      changes.push(`reports to ${boss}`);
+    }
+    await audit(ctx, me, "member.self_setup", { id: me._id, name: me.name }, changes.join("; ") || "Confirmed the details the owner set");
+    if (before !== after) {
+      const names = new Map((await ctx.db.query("geographies").collect()).map((g) => [g.key, g.name]));
+      const label = (keys: string[]) => keys.map((k) => names.get(k) ?? k).join(", ") || "none";
+      for (const owner of (await ctx.db.query("members").collect()).filter((m) => m.role === "owner" && m.active)) {
+        await notify(ctx, owner._id, me, "team_change",
+          `${me.name} chose ${label(geographies)} when setting up (you had set ${label(me.geographies)}). They now see updates from those geographies. Change it on the Team page if that's wrong.`);
+      }
+    }
   },
 });

@@ -64,6 +64,8 @@ export default defineSchema({
     leftAt: v.optional(v.number()),
     // When the last email invitation was sent.
     invitedAt: v.optional(v.number()),
+    // When they finished the first sign-in walkthrough.
+    onboardedAt: v.optional(v.number()),
   })
     .index("by_email", ["email"])
     .index("by_userId", ["userId"]),
@@ -136,7 +138,7 @@ export default defineSchema({
   notifications: defineTable({
     recipientId: v.id("members"),
     actorId: v.id("members"),
-    kind: v.union(v.literal("response"), v.literal("report_comment"), v.literal("report_status")),
+    kind: v.union(v.literal("response"), v.literal("report_comment"), v.literal("report_status"), v.literal("team_change")),
     text: v.string(),
     entryId: v.optional(v.id("entries")),
     reportId: v.optional(v.id("reports")),

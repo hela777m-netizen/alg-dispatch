@@ -11,6 +11,7 @@ import Logo from "./Logo";
 import { useClock } from "@/lib/useClock";
 import { cycleOf, todayISO } from "@/convex/lib/cycles";
 import { MyPresence } from "./Presence";
+import Onboarding from "./Onboarding";
 
 export default function Shell({ children }: { children: React.ReactNode }) {
   return (
@@ -166,6 +167,16 @@ function App({ me, children }: { me: MeMember; children: React.ReactNode }) {
       toast,
     };
   }, [me, cycle, toast, today, liveCycle]);
+
+  // New people go through the short walkthrough once. The owner sets things up on the Team page instead.
+  if (me.member.role !== "owner" && !me.member.onboardedAt) {
+    return (
+      <AppContext.Provider value={value}>
+        <Onboarding />
+        {toastMsg && <div className="toast" role="status">{toastMsg}</div>}
+      </AppContext.Provider>
+    );
+  }
 
   return (
     <AppContext.Provider value={value}>

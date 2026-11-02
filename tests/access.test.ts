@@ -507,3 +507,41 @@ describe("deleting people", () => {
     expect((await c.owner.query(api.members.history, {})).some((r) => r.action === "member.removed")).toBe(true);
   });
 });
+
+describe("first sign-in walkthrough", () => {
+  let c: Ctx;
+  beforeEach(async () => { c = await setup(); });
+
+  test("a new person sets title, geographies, manager and city once; owners are told about geography changes", async () => {
+    await c.uk.mutation(api.entries.addMany, { entries: [entry("uk", "UK update")], source: "typed" });
+    await c.us1.mutation(api.members.completeOnboarding, {
+      title: "Head of US", geographies: ["new-york", "uk", "kazakhstan", "atlantis"], reportsTo: c.ids["Manager One"] as never, location: "New York",
+    });
+    const me = await c.us1.query(api.members.me, {});
+    if (me.state !== "member") throw new Error();
+    expect(me.member.onboardedAt).toBeDefined();
+    expect(me.member.title).toBe("Head of US");
+    expect(me.member.geographies).toEqual(["new-york", "uk"]); // offices only
+    expect(me.member.reportsTo).toBe(c.ids["Manager One"]);
+    // Their choice applies at once.
+    expect((await c.us1.query(api.entries.forCycle, { cycle: cycleOf(today), geography: "uk" })).length).toBe(1);
+    // Owner hears about it, and it's in the history.
+    const inbox = await c.owner.query(api.notifications.list, {});
+    expect(inbox[0].kind).toBe("team_change");
+    expect(inbox[0].text).toMatch(/United States, United Kingdom/);
+    expect((await c.owner.query(api.members.history, {})).some((r) => r.action === "member.self_setup")).toBe(true);
+    // Only once.
+    await expect(c.us1.mutation(api.members.completeOnboarding, { geographies: ["ksa"] })).rejects.toThrow(/already/);
+  });
+
+  test("reporters must pick a geography; nobody can report to themselves; directory has no emails", async () => {
+    await expect(c.us2.mutation(api.members.completeOnboarding, { geographies: [] })).rejects.toThrow(/at least one/);
+    await expect(c.us2.mutation(api.members.completeOnboarding, { geographies: ["new-york"], reportsTo: c.ids["Reporter US Two"] as never })).rejects.toThrow(/other than yourself/);
+    const dir = await c.us2.query(api.members.directory, {});
+    expect(dir.some((p) => p.name === "Reporter US Two")).toBe(false);
+    expect(dir.every((p) => !("email" in p))).toBe(true);
+    // Confirming unchanged details doesn't alert the owner.
+    await c.us2.mutation(api.members.completeOnboarding, { geographies: ["new-york"] });
+    expect((await c.owner.query(api.notifications.list, {})).length).toBe(0);
+  });
+});

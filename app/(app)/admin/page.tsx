@@ -42,6 +42,7 @@ const ACTION_TEXT: Record<string, string> = {
   "member.signin_reset": "reset the sign-in for",
   "member.invited": "emailed an invitation to",
   "member.removed": "deleted",
+  "member.self_setup": "finished first sign-in setup:",
   "signin.refused": "sign-in refused for",
   "owner.handover": "handed over the owner role to",
   "geography.added": "added the office",

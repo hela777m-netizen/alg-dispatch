@@ -35,14 +35,14 @@ export default function InboxPage() {
       {items && items.length > 0 && (
         <div className="panel">
           {items.map((n) => {
-            const href = n.reportId ? (isLead ? `/reviews?report=${n.reportId}` : "/desk") : n.geography ? `/geo/${n.geography}` : "/";
+            const href = n.kind === "team_change" ? "/admin" : n.reportId ? (isLead ? `/reviews?report=${n.reportId}` : "/desk") : n.geography ? `/geo/${n.geography}` : "/";
             return (
               <Link key={n._id} href={href} className="inbox-item">
                 <span className={n.readAt ? "" : "unread"} aria-label={n.readAt ? undefined : "Unread"} />
                 <span>
                   <span style={{ display: "block", whiteSpace: "pre-wrap" }}>{n.text}</span>
                   <span className="small faint">
-                    {n.entryTitle ? `On "${n.entryTitle}"` : n.kind === "report_status" ? "Report review" : "Report comment"}
+                    {n.kind === "team_change" ? "Team change" : n.entryTitle ? `On "${n.entryTitle}"` : n.kind === "report_status" ? "Report review" : "Report comment"}
                     {n.geography ? `, ${geoName(n.geography)}` : ""}
                   </span>
                 </span>

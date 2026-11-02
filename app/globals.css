@@ -502,7 +502,7 @@ button, input, textarea, select { font: inherit; color: inherit; }
 
 /* Welcome screens: invitation and first-sign-in walkthrough */
 /* The blue section's top-right corner sweeps into the page along the exact outer curve of the Al Liwan logo's arch. */
-.welcome-page { background: var(--paper); }
+.welcome-page { background: var(--paper); grid-template-columns: 5fr 7fr; }
 .welcome-art { position: relative; overflow: visible; }
 .welcome-art::after { content: ""; position: absolute; top: 0; left: calc(100% - 2px); height: 100%; aspect-ratio: 344 / 672; background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 344 672' preserveAspectRatio='none'%3E%3Cpath fill='%230b3b80' d='M-4 0 L292.8 0 C283.1 2.4 0.0 42.0 0 314.0 L0 334.0 L-4 334.0 Z'/%3E%3C/svg%3E") no-repeat left top / 100% 100%; pointer-events: none; }
 .welcome-kicker { margin: 36px 0 10px; font-size: 13px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: #c9d7f2; }
@@ -512,4 +512,4 @@ button, input, textarea, select { font: inherit; color: inherit; }
 .welcome-points b { color: #ffffff; font-weight: 600; }
 .accept { width: min(420px, 100%); display: grid; gap: 16px; }
 .accept-title { margin: 0; font-size: 28px; letter-spacing: -0.02em; }
-@media (max-width: 860px) { .welcome-points { display: none; } .welcome-title { font-size: 32px; } .welcome-art::after { content: ""; position: absolute; top: 0; left: calc(100% - 2px); height: 100%; aspect-ratio: 344 / 672; background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 344 672' preserveAspectRatio='none'%3E%3Cpath fill='%230b3b80' d='M-4 0 L292.8 0 C283.1 2.4 0.0 42.0 0 314.0 L0 334.0 L-4 334.0 Z'/%3E%3C/svg%3E") no-repeat left top / 100% 100%; pointer-events: none; } }
+@media (max-width: 860px) { .welcome-page { grid-template-columns: 1fr; } .welcome-points { display: none; } .welcome-title { font-size: 32px; } .welcome-art::after { display: none; } }

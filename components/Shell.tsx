@@ -13,6 +13,7 @@ import { cycleOf, todayISO } from "@/convex/lib/cycles";
 import { MyPresence } from "./Presence";
 import Onboarding from "./Onboarding";
 import PasswordSetup from "./PasswordSetup";
+import InstallPrompt from "./InstallPrompt";
 
 export default function Shell({ children }: { children: React.ReactNode }) {
   return (
@@ -203,6 +204,7 @@ function App({ me, children }: { me: MeMember; children: React.ReactNode }) {
         </main>
         <TabBar />
       </div>
+      <InstallPrompt />
       {toastMsg && <div className="toast" role="status">{toastMsg}</div>}
     </AppContext.Provider>
   );

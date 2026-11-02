@@ -444,10 +444,21 @@ export const businessUpdate = action({
       max_tokens: 8000,
       system,
       tools: [{ name: "write_update", description: "Record the business update.", input_schema: UPDATE_SCHEMA }],
-      tool_choice: { type: "tool", name: "write_update" },
+      // This model accepts only "auto"; the system prompt asks for the tool, and a JSON reply is accepted as a fallback.
+      tool_choice: { type: "auto" },
       messages: [{ role: "user", content: input }],
     }, me.isOwner));
-    const out = (result.content.find((c) => c.type === "tool_use")?.input ?? {}) as Record<string, unknown>;
+    let out = (result.content.find((c) => c.type === "tool_use")?.input ?? null) as Record<string, unknown> | null;
+    if (!out) {
+      const text = result.content.filter((c) => c.type === "text").map((c) => c.text ?? "").join("\n");
+      const match = text.match(/\{[\s\S]*\}/);
+      try {
+        out = match ? (JSON.parse(match[0]) as Record<string, unknown>) : null;
+      } catch {
+        out = null;
+      }
+    }
+    if (!out) throw new ConvexError("Claude didn't return the report. Try again.");
 
     return {
       name: data.name,

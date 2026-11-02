@@ -630,6 +630,17 @@ describe("Word business update", () => {
     expect(JSON.stringify(log)).not.toContain("Falcon");
   });
 
+  test("a plain JSON reply from Claude is accepted when it skips the tool", async () => {
+    process.env.ANTHROPIC_API_KEY = "test-key";
+    await c.ksa.mutation(api.entries.addMany, { entries: [entry("ksa", "Board call")], source: "typed" });
+    const body = { keyWins: [], issues: [], workstreams: [{ heading: "Internal", items: [{ lead: "Board call.", text: "Held." }] }], priorities: [], events: [] };
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ content: [{ type: "text", text: `Here it is: ${JSON.stringify(body)}` }] }), { status: 200 })));
+    const u = await c.ksa.action(api.ai.businessUpdate, { cycle: cycleOf(today) });
+    expect(u.workstreams[0].heading).toBe("Internal");
+    const sent = JSON.parse(((fetch as unknown as { mock: { calls: [string, RequestInit][] } }).mock.calls[0][1].body) as string);
+    expect(sent.tool_choice).toEqual({ type: "auto" });
+  });
+
   test("Word body follows the template headings and escapes text", async () => {
     const { bodyXml, fileName } = await import("../lib/businessUpdateDocx");
     const u = {

@@ -1,6 +1,7 @@
 import { v } from "convex/values";
 import { mutation, query } from "./_generated/server";
 import { canSeeEntry, currentMember, requireMember } from "./lib/access";
+import { nameResolver } from "./lib/people";
 
 export const list = query({
   args: {},
@@ -11,6 +12,7 @@ export const list = query({
       .withIndex("by_recipient", (q) => q.eq("recipientId", me._id))
       .order("desc")
       .take(50);
+    const name = nameResolver(ctx);
     return await Promise.all(
       rows.map(async (n) => {
         const found = n.entryId ? await ctx.db.get(n.entryId) : null;
@@ -19,7 +21,7 @@ export const list = query({
         const report = n.reportId ? await ctx.db.get(n.reportId) : null;
         return {
           ...n,
-          actorName: (await ctx.db.get(n.actorId))?.name ?? "Someone",
+          actorName: await name(n.actorId),
           entryTitle: entry?.title,
           geography: entry?.geography ?? report?.geography,
         };

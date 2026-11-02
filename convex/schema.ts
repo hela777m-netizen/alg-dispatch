@@ -173,6 +173,14 @@ export default defineSchema({
     .index("by_storage", ["storageId"])
     .index("by_created", ["createdAt"]),
 
+  // People the owner deleted from the team. Their past work stays and is labelled with this.
+  formerMembers: defineTable({
+    memberId: v.string(),
+    name: v.string(),
+    email: v.optional(v.string()),
+    removedAt: v.number(),
+  }).index("by_member", ["memberId"]),
+
   // Who changed what. Never holds update or report text, tokens or keys.
   auditLog: defineTable({
     at: v.number(),

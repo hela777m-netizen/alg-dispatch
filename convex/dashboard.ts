@@ -2,6 +2,7 @@ import { v } from "convex/values";
 import { query } from "./_generated/server";
 import type { Doc } from "./_generated/dataModel";
 import { canSee, canSeeEntry, isLead, isOffice, requireMember } from "./lib/access";
+import { nameResolver } from "./lib/people";
 
 const KINDS = ["activity", "meeting", "deal", "blocker", "ask", "next"] as const;
 const TREND_CYCLES = 6;
@@ -76,9 +77,9 @@ export const overview = query({
     for (const d of allDeals.sort((a, b) => a.date.localeCompare(b.date) || a._creationTime - b._creationTime)) {
       latestDeal.set(`${d.geography}::${d.title.toLowerCase()}`, d);
     }
-    const names = new Map(members.map((m) => [m._id as string, m.name]));
-    const pipeline = [...latestDeal.values()]
-      .map((d) => ({
+    const name = nameResolver(ctx);
+    const pipeline = (await Promise.all([...latestDeal.values()].map(async (d) => ({ d, owner: await name(d.authorId) }))))
+      .map(({ d, owner }) => ({
         id: d._id,
         title: d.title,
         geography: d.geography,
@@ -86,15 +87,15 @@ export const overview = query({
         stage: d.dealStage ?? "lead",
         value: d.dealValue,
         date: d.date,
-        owner: names.get(d.authorId) ?? "Former member",
+        owner,
       }))
       .sort((a, b) => (b.value ?? -1) - (a.value ?? -1));
 
-    const blockers = current
+    const blockers = await Promise.all(current
       .filter((e) => e.kind === "blocker" || e.kind === "ask")
       .sort((a, b) => b.date.localeCompare(a.date))
       .slice(0, 8)
-      .map((e) => ({ id: e._id, kind: e.kind, title: e.title, geography: e.geography, author: names.get(e.authorId) ?? "Former member", date: e.date }));
+      .map(async (e) => ({ id: e._id, kind: e.kind, title: e.title, geography: e.geography, author: await name(e.authorId), date: e.date })));
 
     return {
       totals: {

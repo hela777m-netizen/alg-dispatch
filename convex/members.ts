@@ -547,28 +547,19 @@ export const invite = action({
 });
 
 /**
- * Removes a person added by mistake. Only allowed while they have no history in the dashboard:
- * anyone who has posted, reported, commented or replied is marked as left instead, so their
- * work and its attribution stay intact.
+ * Deletes a person from the team. Owner only. Their sign-in stops at once and their email can be
+ * reused. Anything they wrote stays, labelled "Name (email), previously active".
  */
 export const remove = mutation({
   args: { id: v.id("members") },
   handler: async (ctx, { id }) => {
     const me = await requireOwner(ctx);
     const m = await ctx.db.get(id);
-    if (!m) return { removed: true };
-    if (m._id === me._id) throw new ConvexError("You can't remove yourself.");
-    if (m.role === "owner") throw new ConvexError(`${m.name} is an owner. Owners can't remove each other.`);
-    const hasEntries = await ctx.db.query("entries").withIndex("by_author_cycle", (q) => q.eq("authorId", id)).first();
-    const hasReports = await ctx.db.query("reports").withIndex("by_author_cycle_geo", (q) => q.eq("authorId", id)).first();
-    const hasComments = (await ctx.db.query("comments").collect()).some((x) => x.authorId === id);
-    const hasReplies = (await ctx.db.query("responses").collect()).some((x) => x.authorId === id);
-    if (hasEntries || hasReports || hasComments || hasReplies) {
-      if (!m.leftAt) await ctx.db.patch(id, { active: false, leftAt: Date.now() });
-      await audit(ctx, me, "member.left", { id, name: m.name }, "Has history, so kept and marked as left instead of removed");
-      return { removed: false };
-    }
-    // Nothing they wrote exists: tidy up their own traces and remove the row.
+    if (!m) return;
+    if (m._id === me._id) throw new ConvexError("You can't delete yourself.");
+    if (m.role === "owner") throw new ConvexError(`${m.name} is an owner. Owners can't delete each other.`);
+    await ctx.db.insert("formerMembers", { memberId: id, name: m.name, email: m.email, removedAt: Date.now() });
+    // Their own traces that only made sense while they were on the team.
     for (const p of await ctx.db.query("availability").withIndex("by_member", (q) => q.eq("memberId", id)).collect()) await ctx.db.delete(p._id);
     for (const n of await ctx.db.query("notifications").withIndex("by_recipient", (q) => q.eq("recipientId", id)).collect()) await ctx.db.delete(n._id);
     for (const u of (await ctx.db.query("uploads").collect()).filter((x) => x.ownerId === id)) await ctx.db.delete(u._id);
@@ -577,6 +568,5 @@ export const remove = mutation({
     }
     await ctx.db.delete(id);
     await audit(ctx, me, "member.removed", { id, name: m.name }, m.email);
-    return { removed: true };
   },
 });

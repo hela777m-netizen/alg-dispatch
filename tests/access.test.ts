@@ -479,27 +479,31 @@ describe("email invitations", () => {
   });
 });
 
-describe("removing people", () => {
+describe("deleting people", () => {
   let c: Ctx;
   beforeEach(async () => { c = await setup(); });
 
-  test("someone with no history is removed; someone with history is kept as left", async () => {
-    const typo = await c.owner.mutation(api.members.save, { name: "Typo Person", email: "typo@alg.test", role: "reporter", geographies: ["uk"], extraGeographies: [], active: true });
-    expect((await c.owner.mutation(api.members.remove, { id: typo })).removed).toBe(true);
-    expect((await c.owner.query(api.members.list, {})).some((m) => m.name === "Typo Person")).toBe(false);
+  test("the owner deletes anyone; their work stays, labelled as previously active", async () => {
+    const [id] = await c.us1.mutation(api.entries.addMany, { entries: [entry("new-york", "Kept work", { kind: "blocker" })], source: "typed" });
+    await c.manager.mutation(api.entries.respond, { entryId: id, body: "On it", source: "typed" });
+    await c.us1.mutation(api.entries.respond, { entryId: id, body: "Thanks", source: "typed" });
+    const rid = await c.us1.mutation(api.reports.save, { geography: "new-york", cycle: cycleOf(today), summary: "Highlights: one dinner.", submit: true });
 
-    await c.us1.mutation(api.entries.addMany, { entries: [entry("new-york", "Kept work")], source: "typed" });
-    const us1 = c.ids["Reporter US One"] as never;
-    expect((await c.owner.mutation(api.members.remove, { id: us1 })).removed).toBe(false);
-    expect((await c.owner.query(api.members.list, {})).find((m) => m.name === "Reporter US One")?.status).toBe("left");
+    await c.owner.mutation(api.members.remove, { id: c.ids["Reporter US One"] as never });
+    expect((await c.owner.query(api.members.list, {})).some((m) => m.name === "Reporter US One")).toBe(false);
     expect((await c.us1.query(api.members.me, {})).state).toBe("unlinked");
-    expect((await c.manager.query(api.entries.forCycle, { cycle: cycleOf(today) }))[0].authorName).toBe("Reporter US One");
+    const label = "Reporter US One (us1@alg.test), previously active";
+    expect((await c.manager.query(api.entries.forCycle, { cycle: cycleOf(today) }))[0].authorName).toBe(label);
+    expect((await c.manager.query(api.entries.responses, { entryId: id })).map((r) => r.authorName)).toEqual(["Manager One", label]);
+    expect((await c.manager.query(api.reports.get, { id: rid }))?.authorName).toBe(label);
+    expect((await c.manager.query(api.dashboard.overview, { cycle: cycleOf(today) })).blockers[0].author).toBe(label);
+    // The email is free to add again.
+    await c.owner.mutation(api.members.save, { name: "Rejoined", email: US1.email, role: "reporter", geographies: [], extraGeographies: [], active: true });
 
     await expect(c.manager.mutation(api.members.remove, { id: c.ids["Reporter KSA"] as never })).rejects.toThrow();
     const me = await c.owner.query(api.members.me, {});
     if (me.state !== "member") throw new Error();
     await expect(c.owner.mutation(api.members.remove, { id: me.member._id })).rejects.toThrow(/yourself/);
-    const actions = (await c.owner.query(api.members.history, {})).map((r) => r.action);
-    expect(actions).toContain("member.removed");
+    expect((await c.owner.query(api.members.history, {})).some((r) => r.action === "member.removed")).toBe(true);
   });
 });

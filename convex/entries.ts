@@ -5,6 +5,7 @@ import type { MutationCtx, QueryCtx } from "./_generated/server";
 import { canSee, canSeeEntry, clean, getAnchor, isLead, requireMember, resolveGeography } from "./lib/access";
 import { audit } from "./lib/audit";
 import { notify } from "./lib/notify";
+import { nameResolver } from "./lib/people";
 import { cycleOf } from "./lib/cycles";
 import { kindValidator, stageValidator } from "./schema";
 
@@ -132,12 +133,11 @@ export const remove = mutation({
 });
 
 export async function withAuthors(ctx: QueryCtx, entries: Doc<"entries">[]) {
-  const names = new Map<string, string>();
+  const name = nameResolver(ctx);
   const out = [];
   for (const e of entries) {
-    if (!names.has(e.authorId)) names.set(e.authorId, (await ctx.db.get(e.authorId))?.name ?? "Former member");
     const responses = (await ctx.db.query("responses").withIndex("by_entry", (q) => q.eq("entryId", e._id)).collect()).length;
-    out.push({ ...e, authorName: names.get(e.authorId)!, responses });
+    out.push({ ...e, authorName: await name(e.authorId), responses });
   }
   return out;
 }
@@ -150,9 +150,8 @@ export const responses = query({
     const entry = await ctx.db.get(entryId);
     if (!entry || !canSeeEntry(me, entry)) return [];
     const rows = await ctx.db.query("responses").withIndex("by_entry", (q) => q.eq("entryId", entryId)).collect();
-    return await Promise.all(
-      rows.map(async (r) => ({ ...r, authorName: (await ctx.db.get(r.authorId))?.name ?? "Former member", mine: r.authorId === me._id })),
-    );
+    const name = nameResolver(ctx);
+    return await Promise.all(rows.map(async (r) => ({ ...r, authorName: await name(r.authorId), mine: r.authorId === me._id })));
   },
 });
 

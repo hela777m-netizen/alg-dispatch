@@ -41,7 +41,7 @@ const ACTION_TEXT: Record<string, string> = {
   "member.first_sign_in": "first sign-in:",
   "member.signin_reset": "reset the sign-in for",
   "member.invited": "emailed an invitation to",
-  "member.removed": "removed",
+  "member.removed": "deleted",
   "signin.refused": "sign-in refused for",
   "owner.handover": "handed over the owner role to",
   "geography.added": "added the office",
@@ -350,18 +350,18 @@ function MemberEditor({ draft, members, onClose }: { draft: MemberDraft; members
             <button
               className="btn quiet sm danger"
               onClick={async () => {
-                if (!window.confirm(`Remove ${d.name} from the team? If they've already posted or reported anything, they'll be marked as left instead so their work stays.`)) return;
+                if (!window.confirm(`Delete ${d.name}${d.email ? ` (${d.email.trim().toLowerCase()})` : ""} from the team? Their access stops now. Anything they posted stays, marked as "previously active".`)) return;
                 setErr(null);
                 try {
-                  const r = await removeMember({ id: d.id! });
-                  toast(r.removed ? `${d.name} removed` : `${d.name} has history, so they're marked as left and their access is off`);
+                  await removeMember({ id: d.id! });
+                  toast(`${d.name} deleted`);
                   onClose();
                 } catch (e) {
                   setErr(errorText(e));
                 }
               }}
             >
-              Remove
+              Delete
             </button>
           )}
         </div>

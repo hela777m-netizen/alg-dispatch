@@ -5,6 +5,7 @@ import type { QueryCtx } from "./_generated/server";
 import { clean, geographyExists, isLead, requireLead, requireMember } from "./lib/access";
 import { audit } from "./lib/audit";
 import { notify } from "./lib/notify";
+import { nameResolver } from "./lib/people";
 
 async function findReport(ctx: QueryCtx, authorId: Doc<"members">["_id"], cycle: number, geography: string) {
   return await ctx.db
@@ -106,10 +107,11 @@ export const forReview = query({
       : await ctx.db.query("reports").withIndex("by_cycle", (q) => q.eq("cycle", cycle)).collect();
     const sent = rows.filter((r) => r.status !== "draft");
     sent.sort((a, b) => (b.submittedAt ?? 0) - (a.submittedAt ?? 0));
+    const name = nameResolver(ctx);
     return await Promise.all(
       sent.map(async (r) => ({
         ...r,
-        authorName: (await ctx.db.get(r.authorId))?.name ?? "Former member",
+        authorName: await name(r.authorId),
         comments: await commentCount(ctx, r._id),
       })),
     );
@@ -124,13 +126,12 @@ export const get = query({
     const report = await ctx.db.get(id);
     if (!report) return null;
     if (report.authorId !== me._id && (!isLead(me) || report.status === "draft")) return null;
-    const author = await ctx.db.get(report.authorId);
-    const reviewer = report.reviewedBy ? await ctx.db.get(report.reviewedBy) : null;
+    const name = nameResolver(ctx);
     const thread = await ctx.db.query("comments").withIndex("by_report", (q) => q.eq("reportId", id)).collect();
     const comments = await Promise.all(
-      thread.map(async (c) => ({ ...c, authorName: (await ctx.db.get(c.authorId))?.name ?? "Former member", mine: c.authorId === me._id })),
+      thread.map(async (c) => ({ ...c, authorName: await name(c.authorId), mine: c.authorId === me._id })),
     );
-    return { ...report, authorName: author?.name ?? "Former member", reviewerName: reviewer?.name, comments };
+    return { ...report, authorName: await name(report.authorId), reviewerName: report.reviewedBy ? await name(report.reviewedBy) : undefined, comments };
   },
 });
 

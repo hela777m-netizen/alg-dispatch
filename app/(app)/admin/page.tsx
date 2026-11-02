@@ -41,6 +41,7 @@ const ACTION_TEXT: Record<string, string> = {
   "member.first_sign_in": "first sign-in:",
   "member.signin_reset": "reset the sign-in for",
   "member.invited": "emailed an invitation to",
+  "member.removed": "removed",
   "signin.refused": "sign-in refused for",
   "owner.handover": "handed over the owner role to",
   "geography.added": "added the office",
@@ -114,6 +115,9 @@ type MemberDraft = {
 function Members() {
   const members = useQuery(api.members.list);
   const [editing, setEditing] = useState<MemberDraft | null>(null);
+  const [showLeft, setShowLeft] = useState(false);
+  const leftCount = members?.filter((m) => m.status === "left").length ?? 0;
+  const shown = members?.filter((m) => showLeft || m.status !== "left");
 
   return (
     <section className="section">
@@ -130,7 +134,7 @@ function Members() {
       <div className="panel">
         {members === undefined && <p className="faint">Loading</p>}
         <div className="list">
-          {members?.map((m) =>
+          {shown?.map((m) =>
             editing?.id === m._id ? (
               <div key={m._id} className="item" style={{ gridTemplateColumns: "1fr" }}>
                 <MemberEditor draft={editing} members={members ?? []} onClose={() => setEditing(null)} />
@@ -157,6 +161,11 @@ function Members() {
             ),
           )}
         </div>
+        {leftCount > 0 && (
+          <button className="link-btn small" style={{ marginTop: 12 }} onClick={() => setShowLeft((v) => !v)}>
+            {showLeft ? "Hide people who have left" : `Show people who have left (${leftCount})`}
+          </button>
+        )}
       </div>
     </section>
   );
@@ -224,6 +233,7 @@ function MemberEditor({ draft, members, onClose }: { draft: MemberDraft; members
   const save = useMutation(api.members.save);
   const resetSignIn = useMutation(api.members.resetSignIn);
   const invite = useAction(api.members.invite);
+  const removeMember = useMutation(api.members.remove);
   const isSelf = d.id === member._id;
   const original = members.find((m) => m._id === d.id);
   const otherOwner = original?.role === "owner" && !isSelf;
@@ -336,6 +346,24 @@ function MemberEditor({ draft, members, onClose }: { draft: MemberDraft; members
             </button>
           )}
           {d.id && <button className="btn quiet sm" onClick={() => setShowHistory((h) => !h)}>{showHistory ? "Hide history" : "History"}</button>}
+          {d.id && !isSelf && (
+            <button
+              className="btn quiet sm danger"
+              onClick={async () => {
+                if (!window.confirm(`Remove ${d.name} from the team? If they've already posted or reported anything, they'll be marked as left instead so their work stays.`)) return;
+                setErr(null);
+                try {
+                  const r = await removeMember({ id: d.id! });
+                  toast(r.removed ? `${d.name} removed` : `${d.name} has history, so they're marked as left and their access is off`);
+                  onClose();
+                } catch (e) {
+                  setErr(errorText(e));
+                }
+              }}
+            >
+              Remove
+            </button>
+          )}
         </div>
         <div className="row">
           <button className="btn quiet sm" onClick={onClose}>Cancel</button>

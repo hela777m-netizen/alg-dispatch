@@ -478,3 +478,28 @@ describe("email invitations", () => {
     expect((await c.owner.query(api.members.list, {})).find((m) => m.name === "Has Account")?.status).toBe("not_signed_in");
   });
 });
+
+describe("removing people", () => {
+  let c: Ctx;
+  beforeEach(async () => { c = await setup(); });
+
+  test("someone with no history is removed; someone with history is kept as left", async () => {
+    const typo = await c.owner.mutation(api.members.save, { name: "Typo Person", email: "typo@alg.test", role: "reporter", geographies: ["uk"], extraGeographies: [], active: true });
+    expect((await c.owner.mutation(api.members.remove, { id: typo })).removed).toBe(true);
+    expect((await c.owner.query(api.members.list, {})).some((m) => m.name === "Typo Person")).toBe(false);
+
+    await c.us1.mutation(api.entries.addMany, { entries: [entry("new-york", "Kept work")], source: "typed" });
+    const us1 = c.ids["Reporter US One"] as never;
+    expect((await c.owner.mutation(api.members.remove, { id: us1 })).removed).toBe(false);
+    expect((await c.owner.query(api.members.list, {})).find((m) => m.name === "Reporter US One")?.status).toBe("left");
+    expect((await c.us1.query(api.members.me, {})).state).toBe("unlinked");
+    expect((await c.manager.query(api.entries.forCycle, { cycle: cycleOf(today) }))[0].authorName).toBe("Reporter US One");
+
+    await expect(c.manager.mutation(api.members.remove, { id: c.ids["Reporter KSA"] as never })).rejects.toThrow();
+    const me = await c.owner.query(api.members.me, {});
+    if (me.state !== "member") throw new Error();
+    await expect(c.owner.mutation(api.members.remove, { id: me.member._id })).rejects.toThrow(/yourself/);
+    const actions = (await c.owner.query(api.members.history, {})).map((r) => r.action);
+    expect(actions).toContain("member.removed");
+  });
+});

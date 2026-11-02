@@ -513,3 +513,24 @@ button, input, textarea, select { font: inherit; color: inherit; }
 @media (max-width: 860px) { .welcome-page { grid-template-columns: 1fr; } .welcome-points { display: none; } .welcome-title { font-size: 32px; } }
 
 .link-panel { display: grid; gap: 10px; margin-bottom: 16px; padding: 16px 18px; border-radius: var(--r-panel); background: var(--surface); border: 2px solid var(--brand); }
+
+/* ---------- Add to home screen (phones only) ---------- */
+.install {
+  position: fixed; left: 12px; right: 12px; z-index: 30;
+  bottom: calc(76px + env(safe-area-inset-bottom));
+  display: flex; gap: 14px; align-items: flex-start;
+  background: var(--surface); border: 1px solid var(--line); border-radius: 16px;
+  padding: 14px 16px; box-shadow: 0 10px 30px rgba(12, 20, 36, .18);
+}
+.install-icon { border-radius: 10px; flex: none; }
+.install-body { min-width: 0; }
+.install-title { font-weight: 600; font-size: 15px; margin: 0 0 4px; }
+.install-steps { font-size: 14px; line-height: 1.45; color: var(--ink-2); margin: 0; }
+.install-share { vertical-align: -3px; color: var(--brand-text); }
+.install-actions { display: flex; gap: 8px; margin-top: 10px; }
+@media (min-width: 861px) { .install { display: none; } }
+
+/* Installed app: keep content clear of the iPhone notch and home bar. */
+@media (display-mode: standalone) and (max-width: 860px) {
+  .main { padding-top: max(20px, env(safe-area-inset-top)); }
+}

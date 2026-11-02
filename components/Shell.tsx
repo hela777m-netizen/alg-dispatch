@@ -12,6 +12,7 @@ import { useClock } from "@/lib/useClock";
 import { cycleOf, todayISO } from "@/convex/lib/cycles";
 import { MyPresence } from "./Presence";
 import Onboarding from "./Onboarding";
+import PasswordSetup from "./PasswordSetup";
 
 export default function Shell({ children }: { children: React.ReactNode }) {
   return (
@@ -118,6 +119,7 @@ function Gate({ children }: { children: React.ReactNode }) {
 type MeMember = Extract<NonNullable<ReturnType<typeof useQuery<typeof api.members.me>>>, { state: "member" }>;
 
 function App({ me, children }: { me: MeMember; children: React.ReactNode }) {
+  const { user } = useUser();
   const applyFixes = useMutation(api.members.applyFixes);
   const fixed = useRef(false);
   useEffect(() => {
@@ -167,6 +169,15 @@ function App({ me, children }: { me: MeMember; children: React.ReactNode }) {
       toast,
     };
   }, [me, cycle, toast, today, liveCycle]);
+
+  // Someone who came in through a sign-in link sets their password first.
+  if (me.member.role !== "owner" && user && !user.passwordEnabled) {
+    return (
+      <AppContext.Provider value={value}>
+        <PasswordSetup firstName={me.member.name.split(" ")[0]} />
+      </AppContext.Provider>
+    );
+  }
 
   // New people go through the short walkthrough once. The owner sets things up on the Team page instead.
   if (me.member.role !== "owner" && !me.member.onboardedAt) {

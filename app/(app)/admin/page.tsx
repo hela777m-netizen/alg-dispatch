@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { useMutation, useQuery } from "convex/react";
+import { useAction, useMutation, useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import type { Doc, Id } from "@/convex/_generated/dataModel";
 import { useApp } from "@/components/AppContext";
@@ -20,7 +20,8 @@ const ROLE_HELP: Record<Role, string> = {
 type Member = NonNullable<ReturnType<typeof useQuery<typeof api.members.list>>>[number];
 const STATUS_LABEL: Record<Member["status"], string> = {
   active: "Active",
-  not_signed_in: "Not signed in yet",
+  not_signed_in: "Not invited yet",
+  invited: "Invited, not signed in yet",
   no_email: "Needs an email",
   suspended: "Access switched off",
   left: "Left ALG",
@@ -39,6 +40,7 @@ const ACTION_TEXT: Record<string, string> = {
   "member.returned": "marked as returned:",
   "member.first_sign_in": "first sign-in:",
   "member.signin_reset": "reset the sign-in for",
+  "member.invited": "emailed an invitation to",
   "signin.refused": "sign-in refused for",
   "owner.handover": "handed over the owner role to",
   "geography.added": "added the office",
@@ -80,7 +82,7 @@ export default function AdminPage() {
         <div>
           <h1 className="headline">Team</h1>
           <p className="muted">
-            Add someone&apos;s work email here, then send them the link. They sign in with that email and land in their own view.
+            Add someone with their work email and they get an invitation by email. They open it, set their own password, and land in their own view.
           </p>
         </div>
       </div>
@@ -160,11 +162,43 @@ function Members() {
   );
 }
 
+/** Sends or re-sends the email invitation. The person sets their own password from the link. */
+function InviteButton({ m }: { m: Member }) {
+  const { toast } = useApp();
+  const invite = useAction(api.members.invite);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  if (!(m.status === "not_signed_in" || m.status === "invited")) return null;
+  return (
+    <>
+      <button
+        className="btn quiet sm"
+        disabled={busy}
+        onClick={async () => {
+          setBusy(true);
+          setErr(null);
+          try {
+            const r = await invite({ id: m._id, origin: window.location.origin });
+            toast(`Invitation emailed to ${r.email}`);
+          } catch (e) {
+            setErr(errorText(e));
+          } finally {
+            setBusy(false);
+          }
+        }}
+      >
+        {busy ? "Sending" : m.status === "invited" ? "Resend invitation" : "Send invitation"}
+      </button>
+      {err && <p className="notice error small" role="alert" style={{ gridColumn: "1 / -1", margin: 0 }}>{err}</p>}
+    </>
+  );
+}
+
 function MemberRow({ m, onEdit }: { m: Member; onEdit: () => void }) {
   const { geoName } = useApp();
   const tone = m.status === "active" ? "" : m.status === "suspended" || m.status === "left" ? "off" : "warn";
   return (
-    <div className="item" style={{ gridTemplateColumns: "40px minmax(0,1fr) auto", opacity: m.active ? 1 : 0.6 }}>
+    <div className="item" style={{ gridTemplateColumns: "40px minmax(0,1fr) auto auto", opacity: m.active ? 1 : 0.6 }}>
       <span className="avatar">{initials(m.name)}</span>
       <div>
         <div className="title"><a href={`/people/${m._id}`} className="tag-link">{m.name}</a></div>
@@ -175,6 +209,7 @@ function MemberRow({ m, onEdit }: { m: Member; onEdit: () => void }) {
           <span className={`status-pill ${tone}`}>{STATUS_LABEL[m.status]}</span>
         </div>
       </div>
+      <InviteButton m={m} />
       <button className="btn quiet sm" onClick={onEdit}>Edit</button>
     </div>
   );
@@ -188,6 +223,7 @@ function MemberEditor({ draft, members, onClose }: { draft: MemberDraft; members
   const [showHistory, setShowHistory] = useState(false);
   const save = useMutation(api.members.save);
   const resetSignIn = useMutation(api.members.resetSignIn);
+  const invite = useAction(api.members.invite);
   const isSelf = d.id === member._id;
   const original = members.find((m) => m._id === d.id);
   const otherOwner = original?.role === "owner" && !isSelf;
@@ -311,7 +347,7 @@ function MemberEditor({ draft, members, onClose }: { draft: MemberDraft; members
               setBusy(true);
               setErr(null);
               try {
-                await save({
+                const savedId = await save({
                   id: d.id,
                   name: d.name,
                   email: d.email || undefined,
@@ -323,7 +359,18 @@ function MemberEditor({ draft, members, onClose }: { draft: MemberDraft; members
                   reportsTo: d.reportsTo,
                   left: d.left,
                 });
-                toast(d.id ? "Saved. New access applies now." : "Person added");
+                if (!d.id && d.email.trim() && d.active && !d.left) {
+                  // New person with an email: send the invitation straight away.
+                  try {
+                    const r = await invite({ id: savedId, origin: window.location.origin });
+                    toast(`Person added. Invitation emailed to ${r.email}`);
+                  } catch (e) {
+                    toast("Person added");
+                    window.alert(`${d.name} was added, but the invitation didn't send: ${errorText(e)} Use Send invitation on their row to try again.`);
+                  }
+                } else {
+                  toast(d.id ? "Saved. New access applies now." : "Person added");
+                }
                 onClose();
               } catch (e) {
                 setErr(`${errorText(e)} Nothing was changed.`);

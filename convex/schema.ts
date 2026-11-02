@@ -62,6 +62,8 @@ export default defineSchema({
     reportsTo: v.optional(v.id("members")),
     // Set when someone leaves ALG. Their history stays; access is off.
     leftAt: v.optional(v.number()),
+    // When the last email invitation was sent.
+    invitedAt: v.optional(v.number()),
   })
     .index("by_email", ["email"])
     .index("by_userId", ["userId"]),

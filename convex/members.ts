@@ -1,5 +1,5 @@
 import { v, ConvexError } from "convex/values";
-import { action, internalMutation, mutation, query } from "./_generated/server";
+import { action, internalMutation, internalQuery, mutation, query } from "./_generated/server";
 import { internal } from "./_generated/api";
 import { currentMember, effectiveAccess, getAnchor, requireLead, requireMember, requireOwner, clean } from "./lib/access";
 import { audit } from "./lib/audit";
@@ -48,11 +48,11 @@ async function ensureMarkets(ctx: MutationCtx) {
 }
 
 /** Status shown on the Team page. */
-function accountStatus(m: Doc<"members">): "left" | "suspended" | "no_email" | "not_signed_in" | "active" {
+function accountStatus(m: Doc<"members">): "left" | "suspended" | "no_email" | "invited" | "not_signed_in" | "active" {
   if (m.leftAt) return "left";
   if (!m.active) return "suspended";
   if (!m.email) return "no_email";
-  if (!m.userId) return "not_signed_in";
+  if (!m.userId) return m.invitedAt ? "invited" : "not_signed_in";
   return "active";
 }
 
@@ -476,5 +476,72 @@ export const applyFixes = mutation({
       if (row && !row.country) await ctx.db.patch(row._id, { country: g.country });
     }
     await ensureMarkets(ctx);
+  },
+});
+
+/** Who an invitation goes to. Owner only; the person must be active, have an email and not be signed in yet. */
+export const inviteTarget = internalQuery({
+  args: { id: v.id("members") },
+  handler: async (ctx, { id }) => {
+    const me = await currentMember(ctx);
+    if (!me || me.role !== "owner") return { error: "Only the dashboard owner can send invitations." };
+    const m = await ctx.db.get(id);
+    if (!m) return { error: "That person no longer exists." };
+    if (!m.active || m.leftAt) return { error: `${m.name}'s access is switched off. Switch it on first.` };
+    if (!m.email) return { error: `Add ${m.name}'s work email first.` };
+    if (m.userId) return { error: `${m.name} has already signed in.` };
+    return { email: m.email, name: m.name };
+  },
+});
+
+export const markInvited = internalMutation({
+  args: { id: v.id("members") },
+  handler: async (ctx, { id }) => {
+    const me = await currentMember(ctx);
+    const m = await ctx.db.get(id);
+    if (!m) return;
+    await ctx.db.patch(id, { invitedAt: Date.now() });
+    await audit(ctx, me, "member.invited", { id, name: m.name }, m.email);
+  },
+});
+
+/**
+ * Emails the person an invitation from Clerk. The link opens the dashboard's sign-up page,
+ * already tied to their email, where they choose their own password. Nobody else ever sees it.
+ */
+export const invite = action({
+  args: { id: v.id("members"), origin: v.string() },
+  handler: async (ctx, { id, origin }): Promise<{ email: string }> => {
+    if (!/^https:\/\/[a-z0-9.-]+(:\d+)?$/i.test(origin) && !/^http:\/\/localhost(:\d+)?$/.test(origin)) {
+      throw new ConvexError("The dashboard address looks wrong. Reload the page and try again.");
+    }
+    const target: { email?: string; name?: string; error?: string } = await ctx.runQuery(internal.members.inviteTarget, { id });
+    if (target.error || !target.email) throw new ConvexError(target.error ?? "Couldn't send the invitation.");
+    const secret = process.env.CLERK_SECRET_KEY;
+    if (!secret) throw new ConvexError("Invitations aren't set up yet (ref INVITE-CONFIG). Contact the technical maintainer.");
+    const res = await fetch("https://api.clerk.com/v1/invitations", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${secret}`, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        email_address: target.email,
+        redirect_url: `${origin}/sign-up`,
+        notify: true,
+        ignore_existing: true,
+        expires_in_days: 7,
+      }),
+    });
+    if (!res.ok) {
+      let code = "";
+      try {
+        code = ((await res.json()) as { errors?: { code?: string }[] }).errors?.[0]?.code ?? "";
+      } catch { /* not JSON */ }
+      console.error(`[INVITE] Clerk invitation failed ${res.status} ${code}`);
+      if (code === "form_identifier_exists" || code === "duplicate_record") {
+        throw new ConvexError(`${target.email} already has an account. Ask ${target.name} to sign in at ${origin} with that email.`);
+      }
+      throw new ConvexError(`The invitation couldn't be sent (ref INVITE-${res.status}). Try again in a minute.`);
+    }
+    await ctx.runMutation(internal.members.markInvited, { id });
+    return { email: target.email };
   },
 });

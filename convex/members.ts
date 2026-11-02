@@ -490,7 +490,7 @@ export const inviteTarget = internalQuery({
     if (!m) return { error: "That person no longer exists." };
     if (!m.active || m.leftAt) return { error: `${m.name}'s access is switched off. Switch it on first.` };
     if (!m.email) return { error: `Add ${m.name}'s work email first.` };
-    if (m.userId) return { error: `${m.name} has already signed in.` };
+    if (m.userId) return { error: `${m.name} has already signed in. If they can't get in now, use Reset sign-in first.` };
     return { email: m.email, name: m.name };
   },
 });
@@ -502,74 +502,79 @@ export const markInvited = internalMutation({
     const m = await ctx.db.get(id);
     if (!m) return;
     await ctx.db.patch(id, { invitedAt: Date.now() });
-    await audit(ctx, me, "member.invited", { id, name: m.name }, m.email);
+    await audit(ctx, me, "member.invited", { id, name: m.name }, `Sign-in link created for ${m.email}`);
   },
 });
 
+const LINK_DAYS = 7;
+
 /**
- * Emails the person an invitation from Clerk. The link opens the dashboard's sign-up page,
- * already tied to their email, where they choose their own password. Nobody else ever sees it.
+ * Gives the owner a personal sign-in link for someone on the team list.
+ * The dashboard creates the person's login itself (with their verified work email), so Clerk
+ * never treats them as a stranger and never shows "request access". The link signs them in
+ * once, with no code; they then choose their own password. Valid for 7 days, single use.
  */
 export const invite = action({
   args: { id: v.id("members"), origin: v.string() },
-  handler: async (ctx, { id, origin }): Promise<{ email: string }> => {
+  handler: async (ctx, { id, origin }): Promise<{ email: string; name: string; link: string; expiresAt: number }> => {
     if (!/^https:\/\/[a-z0-9.-]+(:\d+)?$/i.test(origin) && !/^http:\/\/localhost(:\d+)?$/.test(origin)) {
       throw new ConvexError("The dashboard address looks wrong. Reload the page and try again.");
     }
     const target: { email?: string; name?: string; error?: string } = await ctx.runQuery(internal.members.inviteTarget, { id });
-    if (target.error || !target.email) throw new ConvexError(target.error ?? "Couldn't send the invitation.");
+    if (target.error || !target.email || !target.name) throw new ConvexError(target.error ?? "Couldn't create the sign-in link.");
     const secret = process.env.CLERK_SECRET_KEY;
-    if (!secret) throw new ConvexError("Invitations aren't set up yet (ref INVITE-CONFIG). Contact the technical maintainer.");
+    if (!secret) throw new ConvexError("Sign-in links aren't set up yet (ref INVITE-CONFIG). Contact the technical maintainer.");
     const clerk = (path: string, init: RequestInit = {}) =>
       fetch(`https://api.clerk.com/v1${path}`, {
         ...init,
         headers: { Authorization: `Bearer ${secret}`, "Content-Type": "application/json", ...(init.headers ?? {}) },
       });
+    const fail = async (res: Response, step: string): Promise<never> => {
+      let code = "";
+      try { code = ((await res.json()) as { errors?: { code?: string }[] }).errors?.[0]?.code ?? ""; } catch { /* not JSON */ }
+      console.error(`[INVITE] ${step} failed ${res.status} ${code}`);
+      throw new ConvexError(`The sign-in link couldn't be created (ref INVITE-${step}-${res.status}). Try again in a minute.`);
+    };
     const email = target.email;
 
-    // 1. Someone who already has a login doesn't need an invitation: the sign-up page would only
-    //    tell them the email is taken. They just sign in.
-    const existing = await clerk(`/users?email_address=${encodeURIComponent(email)}&limit=1`);
-    if (existing.ok && ((await existing.json()) as unknown[]).length > 0) {
-      throw new ConvexError(`${email} already has a login, so no invitation is needed. Ask ${target.name} to go to ${origin} and sign in with that email.`);
+    // 1. Their login: reuse one that exists, otherwise create it now.
+    const found = await clerk(`/users?email_address=${encodeURIComponent(email)}&limit=1`);
+    if (!found.ok) await fail(found, "LOOKUP");
+    let userId = ((await found.json()) as { id: string }[])[0]?.id;
+    if (!userId) {
+      const [first, ...rest] = target.name.split(" ");
+      const created = await clerk("/users", {
+        method: "POST",
+        body: JSON.stringify({
+          email_address: [email],
+          first_name: first,
+          last_name: rest.join(" ") || undefined,
+          skip_password_requirement: true,
+          skip_legal_checks: true,
+        }),
+      });
+      if (!created.ok) await fail(created, "CREATE");
+      userId = ((await created.json()) as { id: string }).id;
     }
 
-    // 2. Resending: withdraw any invitation still waiting, so only the newest link works.
-    const pending = await clerk(`/invitations?status=pending&query=${encodeURIComponent(email)}&limit=20`);
-    if (pending.ok) {
-      const body = (await pending.json()) as { data?: { id: string; email_address: string }[] } | { id: string; email_address: string }[];
-      const rows = Array.isArray(body) ? body : body.data ?? [];
-      for (const inv of rows.filter((r) => r.email_address.toLowerCase() === email)) {
-        await clerk(`/invitations/${inv.id}/revoke`, { method: "POST" });
-      }
-    }
-
-    // 3. A fresh invitation. Not created if the email is already taken.
-    const res = await clerk("/invitations", {
+    // 2. A one-time sign-in link for that login.
+    const tokenRes = await clerk("/sign_in_tokens", {
       method: "POST",
-      body: JSON.stringify({
-        email_address: email,
-        redirect_url: `${origin}/sign-up`,
-        notify: true,
-        ignore_existing: false,
-        expires_in_days: 7,
-      }),
+      body: JSON.stringify({ user_id: userId, expires_in_seconds: LINK_DAYS * 86_400 }),
     });
-    if (!res.ok) {
-      let code = "";
-      try {
-        code = ((await res.json()) as { errors?: { code?: string }[] }).errors?.[0]?.code ?? "";
-      } catch { /* not JSON */ }
-      console.error(`[INVITE] Clerk invitation failed ${res.status} ${code}`);
-      if (code === "form_identifier_exists" || code === "duplicate_record") {
-        throw new ConvexError(`${email} already has a login or a waiting invitation. Ask ${target.name} to go to ${origin} and sign in with that email.`);
-      }
-      throw new ConvexError(`The invitation couldn't be sent (ref INVITE-${res.status}). Try again in a minute.`);
-    }
+    if (!tokenRes.ok) await fail(tokenRes, "TOKEN");
+    const token = ((await tokenRes.json()) as { token: string }).token;
+
     await ctx.runMutation(internal.members.markInvited, { id });
-    return { email };
+    return {
+      email,
+      name: target.name,
+      link: `${origin}/welcome?ticket=${encodeURIComponent(token)}`,
+      expiresAt: Date.now() + LINK_DAYS * 86_400_000,
+    };
   },
 });
+
 
 /**
  * Deletes a person from the team. Owner only. Their sign-in stops at once and their email can be

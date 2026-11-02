@@ -20,8 +20,8 @@ const ROLE_HELP: Record<Role, string> = {
 type Member = NonNullable<ReturnType<typeof useQuery<typeof api.members.list>>>[number];
 const STATUS_LABEL: Record<Member["status"], string> = {
   active: "Active",
-  not_signed_in: "Not invited yet",
-  invited: "Invited, not signed in yet",
+  not_signed_in: "No sign-in link yet",
+  invited: "Link sent, not signed in yet",
   no_email: "Needs an email",
   suspended: "Access switched off",
   left: "Left ALG",
@@ -40,7 +40,7 @@ const ACTION_TEXT: Record<string, string> = {
   "member.returned": "marked as returned:",
   "member.first_sign_in": "first sign-in:",
   "member.signin_reset": "reset the sign-in for",
-  "member.invited": "emailed an invitation to",
+  "member.invited": "created a sign-in link for",
   "member.removed": "deleted",
   "member.self_setup": "finished first sign-in setup:",
   "signin.refused": "sign-in refused for",
@@ -84,7 +84,7 @@ export default function AdminPage() {
         <div>
           <h1 className="headline">Team</h1>
           <p className="muted">
-            Add someone with their work email and they get an invitation by email. They open it, set their own password, and land in their own view.
+            Add someone with their work email and you get a personal sign-in link to send them. One click takes them in, they choose a password, and they land in their own view.
           </p>
         </div>
       </div>
@@ -117,6 +117,7 @@ function Members() {
   const members = useQuery(api.members.list);
   const [editing, setEditing] = useState<MemberDraft | null>(null);
   const [showLeft, setShowLeft] = useState(false);
+  const [linkInfo, setLinkInfo] = useState<LinkInfo | null>(null);
   const leftCount = members?.filter((m) => m.status === "left").length ?? 0;
   const shown = members?.filter((m) => showLeft || m.status !== "left");
 
@@ -131,19 +132,21 @@ function Members() {
           Add person
         </button>
       </div>
-      {editing && !editing.id && <MemberEditor draft={editing} members={members ?? []} onClose={() => setEditing(null)} />}
+      {linkInfo && <LinkPanel info={linkInfo} onClose={() => setLinkInfo(null)} />}
+      {editing && !editing.id && <MemberEditor draft={editing} members={members ?? []} onClose={() => setEditing(null)} onLink={setLinkInfo} />}
       <div className="panel">
         {members === undefined && <p className="faint">Loading</p>}
         <div className="list">
           {shown?.map((m) =>
             editing?.id === m._id ? (
               <div key={m._id} className="item" style={{ gridTemplateColumns: "1fr" }}>
-                <MemberEditor draft={editing} members={members ?? []} onClose={() => setEditing(null)} />
+                <MemberEditor draft={editing} members={members ?? []} onClose={() => setEditing(null)} onLink={setLinkInfo} />
               </div>
             ) : (
               <MemberRow
                 key={m._id}
                 m={m}
+                onLink={setLinkInfo}
                 onEdit={() =>
                   setEditing({
                     id: m._id,
@@ -172,9 +175,40 @@ function Members() {
   );
 }
 
-/** Sends or re-sends the email invitation. The person sets their own password from the link. */
-function InviteButton({ m }: { m: Member }) {
-  const { toast } = useApp();
+type LinkInfo = { name: string; email: string; link: string; expiresAt: number };
+
+/** Shows a personal sign-in link with one-click copy and a ready-made email from your own mailbox. */
+function LinkPanel({ info, onClose }: { info: LinkInfo; onClose: () => void }) {
+  const [copied, setCopied] = useState(false);
+  const first = info.name.split(" ")[0];
+  const until = new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "long" }).format(info.expiresAt);
+  const subject = "Your access to the Al Liwan Reporting Dashboard";
+  const body = `Hi ${first},\n\nHere is your personal link to the Al Liwan Reporting Dashboard:\n\n${info.link}\n\nClick it to go straight in, then choose your password. The link works once and until ${until}. After that, sign in with ${info.email} and your password.\n\nThanks`;
+  return (
+    <div className="link-panel" role="dialog" aria-label={`Sign-in link for ${info.name}`}>
+      <p style={{ margin: 0 }}><b>Sign-in link for {info.name}</b></p>
+      <p className="small muted" style={{ margin: 0 }}>
+        Send it to {info.email}. It signs them straight in once, with no code, then they choose a password. Valid until {until}. Anyone with the link can use it, so send it only to them.
+      </p>
+      <input className="input" readOnly value={info.link} onFocus={(e) => e.currentTarget.select()} aria-label="Sign-in link" />
+      <div className="row end">
+        <button className="btn quiet sm" onClick={onClose}>Done</button>
+        <a className="btn quiet sm" href={`mailto:${encodeURIComponent(info.email)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`}>Open in email</a>
+        <button
+          className="btn sm"
+          onClick={async () => {
+            try { await navigator.clipboard.writeText(info.link); setCopied(true); } catch { /* clipboard blocked: the field is selectable */ }
+          }}
+        >
+          {copied ? "Copied" : "Copy link"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/** Creates a fresh sign-in link for someone who hasn't signed in yet. */
+function InviteButton({ m, onLink }: { m: Member; onLink: (l: LinkInfo) => void }) {
   const invite = useAction(api.members.invite);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -188,8 +222,7 @@ function InviteButton({ m }: { m: Member }) {
           setBusy(true);
           setErr(null);
           try {
-            const r = await invite({ id: m._id, origin: window.location.origin });
-            toast(`Invitation emailed to ${r.email}`);
+            onLink(await invite({ id: m._id, origin: window.location.origin }));
           } catch (e) {
             setErr(errorText(e));
           } finally {
@@ -197,14 +230,14 @@ function InviteButton({ m }: { m: Member }) {
           }
         }}
       >
-        {busy ? "Sending" : m.status === "invited" ? "Resend invitation" : "Send invitation"}
+        {busy ? "Creating" : m.status === "invited" ? "New sign-in link" : "Get sign-in link"}
       </button>
       {err && <p className="notice error small" role="alert" style={{ gridColumn: "1 / -1", margin: 0 }}>{err}</p>}
     </>
   );
 }
 
-function MemberRow({ m, onEdit }: { m: Member; onEdit: () => void }) {
+function MemberRow({ m, onEdit, onLink }: { m: Member; onEdit: () => void; onLink: (l: LinkInfo) => void }) {
   const { geoName } = useApp();
   const tone = m.status === "active" ? "" : m.status === "suspended" || m.status === "left" ? "off" : "warn";
   return (
@@ -219,13 +252,13 @@ function MemberRow({ m, onEdit }: { m: Member; onEdit: () => void }) {
           <span className={`status-pill ${tone}`}>{STATUS_LABEL[m.status]}</span>
         </div>
       </div>
-      <InviteButton m={m} />
+      <InviteButton m={m} onLink={onLink} />
       <button className="btn quiet sm" onClick={onEdit}>Edit</button>
     </div>
   );
 }
 
-function MemberEditor({ draft, members, onClose }: { draft: MemberDraft; members: Member[]; onClose: () => void }) {
+function MemberEditor({ draft, members, onClose, onLink }: { draft: MemberDraft; members: Member[]; onClose: () => void; onLink: (l: LinkInfo) => void }) {
   const { geographies, member, toast, geoName } = useApp();
   const [d, setD] = useState(draft);
   const [err, setErr] = useState<string | null>(null);
@@ -389,13 +422,13 @@ function MemberEditor({ draft, members, onClose }: { draft: MemberDraft; members
                   left: d.left,
                 });
                 if (!d.id && d.email.trim() && d.active && !d.left) {
-                  // New person with an email: send the invitation straight away.
+                  // New person with an email: create their sign-in link straight away.
                   try {
-                    const r = await invite({ id: savedId, origin: window.location.origin });
-                    toast(`Person added. Invitation emailed to ${r.email}`);
+                    onLink(await invite({ id: savedId, origin: window.location.origin }));
+                    toast("Person added. Send them the link below.");
                   } catch (e) {
                     toast("Person added");
-                    window.alert(`${d.name} was added, but the invitation didn't send: ${errorText(e)} Use Send invitation on their row to try again.`);
+                    window.alert(`${d.name} was added, but the sign-in link couldn't be created: ${errorText(e)} Use Get sign-in link on their row to try again.`);
                   }
                 } else {
                   toast(d.id ? "Saved. New access applies now." : "Person added");

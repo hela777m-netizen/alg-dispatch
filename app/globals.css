@@ -511,3 +511,5 @@ button, input, textarea, select { font: inherit; color: inherit; }
 .accept { width: min(420px, 100%); display: grid; gap: 16px; }
 .accept-title { margin: 0; font-size: 28px; letter-spacing: -0.02em; }
 @media (max-width: 860px) { .welcome-page { grid-template-columns: 1fr; } .welcome-points { display: none; } .welcome-title { font-size: 32px; } }
+
+.link-panel { display: grid; gap: 10px; margin-bottom: 16px; padding: 16px 18px; border-radius: var(--r-panel); background: var(--surface); border: 2px solid var(--brand); }

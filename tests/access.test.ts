@@ -446,16 +446,24 @@ describe("email invitations", () => {
   afterEach(() => { vi.unstubAllGlobals(); delete process.env.CLERK_SECRET_KEY; });
 
   test("the owner invites a new person; Clerk sends the email; status and history update", async () => {
-    const calls: { url: string; body: Record<string, unknown> }[] = [];
-    vi.stubGlobal("fetch", vi.fn(async (url: string, init: RequestInit) => {
-      calls.push({ url, body: JSON.parse(String(init.body)) });
+    const calls: { url: string; method: string; body?: Record<string, unknown> }[] = [];
+    vi.stubGlobal("fetch", vi.fn(async (url: string, init: RequestInit = {}) => {
+      calls.push({ url, method: init.method ?? "GET", body: init.body ? JSON.parse(String(init.body)) : undefined });
+      if (url.includes("/users?")) return new Response("[]", { status: 200 });
+      if (url.includes("/invitations?")) return new Response(JSON.stringify({ data: [{ id: "inv_old", email_address: "joiner@alg.test" }] }), { status: 200 });
       return new Response(JSON.stringify({ id: "inv_1" }), { status: 200 });
     }));
     const id = await c.owner.mutation(api.members.save, { name: "New Joiner", email: "Joiner@ALG.test", role: "reporter", geographies: ["uk"], extraGeographies: [], active: true });
     const r = await c.owner.action(api.members.invite, { id, origin: "https://reporting.example.com" });
     expect(r.email).toBe("joiner@alg.test");
-    expect(calls[0].url).toBe("https://api.clerk.com/v1/invitations");
-    expect(calls[0].body).toMatchObject({ email_address: "joiner@alg.test", redirect_url: "https://reporting.example.com/sign-up", notify: true });
+    // Checks for an existing login, withdraws the old waiting invitation, then sends a fresh one.
+    expect(calls.map((x) => `${x.method} ${x.url.split("?")[0]}`)).toEqual([
+      "GET https://api.clerk.com/v1/users",
+      "GET https://api.clerk.com/v1/invitations",
+      "POST https://api.clerk.com/v1/invitations/inv_old/revoke",
+      "POST https://api.clerk.com/v1/invitations",
+    ]);
+    expect(calls[3].body).toMatchObject({ email_address: "joiner@alg.test", redirect_url: "https://reporting.example.com/sign-up", notify: true, ignore_existing: false });
     expect((await c.owner.query(api.members.list, {})).find((m) => m.name === "New Joiner")?.status).toBe("invited");
     expect((await c.owner.query(api.members.history, { id })).some((h) => h.action === "member.invited")).toBe(true);
     // Accepting the invitation and signing in links them as usual.
@@ -471,10 +479,16 @@ describe("email invitations", () => {
     await expect(c.owner.action(api.members.invite, { id: china, origin: "javascript:alert(1)" })).rejects.toThrow(/address/);
   });
 
-  test("an email that already has an account gets a plain message", async () => {
-    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ errors: [{ code: "form_identifier_exists" }] }), { status: 422 })));
+  test("an email that already has a login gets no invitation, just a sign-in instruction", async () => {
+    const posted: string[] = [];
+    vi.stubGlobal("fetch", vi.fn(async (url: string, init: RequestInit = {}) => {
+      if (init.method === "POST") posted.push(url);
+      if (url.includes("/users?")) return new Response(JSON.stringify([{ id: "user_has" }]), { status: 200 });
+      return new Response("{}", { status: 200 });
+    }));
     const id = await c.owner.mutation(api.members.save, { name: "Has Account", email: "has@alg.test", role: "reporter", geographies: [], extraGeographies: [], active: true });
-    await expect(c.owner.action(api.members.invite, { id, origin: "https://x.example.com" })).rejects.toThrow(/already has an account/);
+    await expect(c.owner.action(api.members.invite, { id, origin: "https://x.example.com" })).rejects.toThrow(/already has a login.*sign in/);
+    expect(posted).toEqual([]);
     expect((await c.owner.query(api.members.list, {})).find((m) => m.name === "Has Account")?.status).toBe("not_signed_in");
   });
 });

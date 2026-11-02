@@ -46,9 +46,23 @@ export default function Onboarding() {
   }
 
   return (
-    <div className="center-screen">
+    <main className="signin">
+      <section className="signin-art welcome-art">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src="/alliwan-arch-white.png" alt="" aria-hidden="true" className="welcome-arch" />
+        <div style={{ position: "relative" }}>
+          <Logo height={52} onDark />
+          <p className="welcome-kicker">Reporting Dashboard</p>
+          <h1 className="welcome-title">Welcome to Al Liwan,<br />{first}.</h1>
+        </div>
+        <ul className="welcome-points">
+          <li><b>Log as you go.</b> Type, talk it through, or upload a report you already have.</li>
+          <li><b>One report every two weeks.</b> Drafted for you from what you logged.</li>
+          <li><b>Get answers faster.</b> Raise a blocker and Amy can respond directly.</li>
+        </ul>
+      </section>
+      <section className="signin-form">
       <div className="onboard">
-        <Logo height={40} />
         <ol className="onboard-steps" aria-label="Setup steps">
           {STEPS.map((s, i) => (
             <li key={s} aria-current={i === step ? "step" : undefined} className={i < step ? "done" : ""}>{s}</li>
@@ -57,7 +71,7 @@ export default function Onboarding() {
 
         {step === 0 && (
           <section className="stack">
-            <h1 className="headline">Welcome, {first}</h1>
+            <h2 className="headline">Let&apos;s set you up</h2>
             <p className="muted">Four quick questions so your updates and reports land in the right place. It takes under a minute.</p>
             <label className="field">
               <span>Your title</span>
@@ -68,7 +82,7 @@ export default function Onboarding() {
 
         {step === 1 && (
           <section className="stack">
-            <h1 className="headline">Which geographies do you cover?</h1>
+            <h2 className="headline">Which geographies do you cover?</h2>
             <p className="muted">
               You&apos;ll see the team&apos;s updates from these, and send a short report on each every two weeks.
               You can still post about any other country whenever you need to.
@@ -87,7 +101,7 @@ export default function Onboarding() {
 
         {step === 2 && (
           <section className="stack">
-            <h1 className="headline">Who do you report to?</h1>
+            <h2 className="headline">Who do you report to?</h2>
             <label className="field">
               <span>Reporting manager</span>
               <select className="select" value={reportsTo} onChange={(e) => setReportsTo(e.target.value)}>
@@ -100,7 +114,7 @@ export default function Onboarding() {
 
         {step === 3 && (
           <section className="stack">
-            <h1 className="headline">Where do you usually work?</h1>
+            <h2 className="headline">Where do you usually work?</h2>
             <label className="field">
               <span>City</span>
               <input className="input" autoFocus value={location} maxLength={80} placeholder="Riyadh" list="onboard-cities" onChange={(e) => setLocation(e.target.value)} />
@@ -116,12 +130,13 @@ export default function Onboarding() {
         <div className="row between">
           {step > 0 ? <button className="btn quiet" onClick={() => setStep(step - 1)}>Back</button> : <span />}
           {last ? (
-            <button className="btn" disabled={busy} onClick={submit}>{busy ? "Saving" : "Finish"}</button>
+            <button className="btn" disabled={busy} onClick={submit}>{busy ? "Opening your dashboard" : "Finish and open my dashboard"}</button>
           ) : (
             <button className="btn" disabled={!canNext} onClick={() => setStep(step + 1)}>Next</button>
           )}
         </div>
       </div>
-    </div>
+      </section>
+    </main>
   );
 }

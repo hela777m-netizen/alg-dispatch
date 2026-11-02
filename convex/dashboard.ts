@@ -1,7 +1,8 @@
 import { v } from "convex/values";
 import { query } from "./_generated/server";
 import type { Doc } from "./_generated/dataModel";
-import { canSee, isLead, requireMember } from "./lib/access";
+import { canSee, canSeeEntry, isLead, isOffice, requireMember } from "./lib/access";
+import { nameResolver } from "./lib/people";
 
 const KINDS = ["activity", "meeting", "deal", "blocker", "ask", "next"] as const;
 const TREND_CYCLES = 6;
@@ -11,18 +12,21 @@ export const overview = query({
   args: { cycle: v.number() },
   handler: async (ctx, { cycle }) => {
     const me = await requireMember(ctx);
-    const geographies = (await ctx.db.query("geographies").collect())
-      .filter((g) => g.active && canSee(me, g.key))
-      .sort((a, b) => a.order - b.order);
-    const visible = new Set(geographies.map((g) => g.key));
-
-    // Activity over the last few cycles.
+    // Activity over the last few cycles: updates in visible geographies, plus the viewer's own anywhere.
     const recent: Doc<"entries">[] = [];
     for (let c = cycle - TREND_CYCLES + 1; c <= cycle; c++) {
       const rows = await ctx.db.query("entries").withIndex("by_cycle", (q) => q.eq("cycle", c)).collect();
-      recent.push(...rows.filter((r) => visible.has(r.geography)));
+      recent.push(...rows.filter((r) => canSeeEntry(me, r)));
     }
     const current = recent.filter((e) => e.cycle === cycle);
+    const ownElsewhere = new Set(current.map((e) => e.geography));
+
+    const geographies = (await ctx.db.query("geographies").collect())
+      .filter((g) => g.active && (canSee(me, g.key) || ownElsewhere.has(g.key)))
+      // Markets appear only when there is activity to show.
+      .filter((g) => isOffice(g) || ownElsewhere.has(g.key))
+      .sort((a, b) => a.order - b.order);
+    const visible = new Set(geographies.map((g) => g.key));
 
     const byGeo = geographies.map((g) => {
       const rows = current.filter((e) => e.geography === g.key);
@@ -39,6 +43,8 @@ export const overview = query({
         timezone: g.timezone,
         lat: g.lat,
         lng: g.lng,
+        office: isOffice(g),
+        country: g.country,
         total: rows.length,
         counts,
         trend,
@@ -58,21 +64,22 @@ export const overview = query({
           name: m.name,
           geography: g,
           status: r?.status ?? ("missing" as const),
-          reportId: r?._id,
+          // Drafts are private to their author.
+          reportId: r && (r.status !== "draft" || m._id === me._id) ? r._id : undefined,
           linked: Boolean(m.userId),
           entries: current.filter((e) => e.authorId === m._id && e.geography === g).length,
         };
       });
 
     // Pipeline: latest state of each named deal across all time.
-    const allDeals = (await ctx.db.query("entries").collect()).filter((e) => e.kind === "deal" && visible.has(e.geography));
+    const allDeals = (await ctx.db.query("entries").collect()).filter((e) => e.kind === "deal" && canSeeEntry(me, e));
     const latestDeal = new Map<string, Doc<"entries">>();
     for (const d of allDeals.sort((a, b) => a.date.localeCompare(b.date) || a._creationTime - b._creationTime)) {
       latestDeal.set(`${d.geography}::${d.title.toLowerCase()}`, d);
     }
-    const names = new Map(members.map((m) => [m._id as string, m.name]));
-    const pipeline = [...latestDeal.values()]
-      .map((d) => ({
+    const name = nameResolver(ctx);
+    const pipeline = (await Promise.all([...latestDeal.values()].map(async (d) => ({ d, owner: await name(d.authorId) }))))
+      .map(({ d, owner }) => ({
         id: d._id,
         title: d.title,
         geography: d.geography,
@@ -80,15 +87,15 @@ export const overview = query({
         stage: d.dealStage ?? "lead",
         value: d.dealValue,
         date: d.date,
-        owner: names.get(d.authorId) ?? "Former member",
+        owner,
       }))
       .sort((a, b) => (b.value ?? -1) - (a.value ?? -1));
 
-    const blockers = current
+    const blockers = await Promise.all(current
       .filter((e) => e.kind === "blocker" || e.kind === "ask")
       .sort((a, b) => b.date.localeCompare(a.date))
       .slice(0, 8)
-      .map((e) => ({ id: e._id, kind: e.kind, title: e.title, geography: e.geography, author: names.get(e.authorId) ?? "Former member", date: e.date }));
+      .map(async (e) => ({ id: e._id, kind: e.kind, title: e.title, geography: e.geography, author: await name(e.authorId), date: e.date })));
 
     return {
       totals: {

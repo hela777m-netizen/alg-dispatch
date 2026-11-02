@@ -22,8 +22,9 @@ export function ReportSlot({
   report: Doc<"reports"> | null;
   comments: number;
 }) {
-  const { cycle, currentCycle, geoName, toast } = useApp();
+  const { cycle, currentCycle, geoName, toast, member } = useApp();
   const [text, setText] = useState(report?.summary ?? "");
+  const [restored, setRestored] = useState(false);
   const [busy, setBusy] = useState<"draft" | "save" | "send" | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [showThread, setShowThread] = useState(false);
@@ -35,6 +36,28 @@ export function ReportSlot({
   const status = report?.status ?? "missing";
   const locked = status === "submitted" || status === "reviewed";
   const dirty = text !== (report?.summary ?? "");
+
+  // Unsaved text is kept on this device until it is saved or sent, so a dropped connection
+  // or a closed tab doesn't lose it. Browser storage may be unavailable; the report still works.
+  const storeKey = `alg-report:${member._id}:${geography}:${cycle}`;
+  useEffect(() => {
+    try {
+      const kept = localStorage.getItem(storeKey);
+      if (kept !== null && !locked && kept !== (report?.summary ?? "")) {
+        setText(kept);
+        setRestored(true);
+      } else if (locked) {
+        localStorage.removeItem(storeKey);
+      }
+    } catch { /* storage unavailable */ }
+    // Only when the slot first appears or the report locks.
+  }, [storeKey, locked]);
+  useEffect(() => {
+    try {
+      if (dirty && !locked) localStorage.setItem(storeKey, text);
+      else localStorage.removeItem(storeKey);
+    } catch { /* storage unavailable */ }
+  }, [text, dirty, locked, storeKey]);
   const past = cycle < currentCycle;
 
   async function run(kind: "save" | "send") {
@@ -42,6 +65,8 @@ export function ReportSlot({
     setBusy(kind);
     try {
       await save({ geography, cycle, summary: text, submit: kind === "send" });
+      setRestored(false);
+      try { localStorage.removeItem(storeKey); } catch { /* storage unavailable */ }
       toast(kind === "send" ? "Report sent to Amy" : "Draft saved");
     } catch (e) {
       setErr(errorText(e));
@@ -56,7 +81,7 @@ export function ReportSlot({
         <div>
           <h3 className="h2">{geoName(geography)}</h3>
           <p className="small faint" style={{ margin: "4px 0 0" }}>
-            {entryCount} update{entryCount === 1 ? "" : "s"} logged{expected ? "" : ", occasional geography"}
+            {entryCount} update{entryCount === 1 ? "" : "s"} logged{expected ? "" : ", optional: not one of your assigned geographies"}
           </p>
         </div>
         <Status status={status} />
@@ -77,10 +102,14 @@ export function ReportSlot({
         />
       )}
 
-      {err && <p className="notice error" role="alert">{err}</p>}
+      {restored && dirty && !locked && (
+        <p className="notice" role="status">Restored text you hadn&apos;t saved, from this device. Save or send it to keep it.</p>
+      )}
+      {err && <p className="notice error" role="alert">{err} Your text is still here.</p>}
 
       <div className="row between">
         <div className="row">
+          {dirty && !locked && <span className="small faint">Not saved yet</span>}
           {(report && comments > 0) || report?.status === "needs_info" ? (
             <button className="btn quiet sm" onClick={() => setShowThread((s) => !s)}>
               {showThread ? "Hide comments" : `Comments${comments ? ` (${comments})` : ""}`}

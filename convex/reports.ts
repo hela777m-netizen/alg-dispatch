@@ -2,8 +2,10 @@ import { v, ConvexError } from "convex/values";
 import { mutation, query } from "./_generated/server";
 import type { Doc } from "./_generated/dataModel";
 import type { QueryCtx } from "./_generated/server";
-import { canLogTo, clean, isLead, requireLead, requireMember } from "./lib/access";
+import { clean, geographyExists, isLead, requireLead, requireMember } from "./lib/access";
+import { audit } from "./lib/audit";
 import { notify } from "./lib/notify";
+import { nameResolver } from "./lib/people";
 
 async function findReport(ctx: QueryCtx, authorId: Doc<"members">["_id"], cycle: number, geography: string) {
   return await ctx.db
@@ -58,7 +60,7 @@ export const save = mutation({
   },
   handler: async (ctx, { geography, cycle, summary, submit }) => {
     const me = await requireMember(ctx);
-    if (!canLogTo(me, geography)) throw new ConvexError("You don't report on that geography.");
+    if (!(await geographyExists(ctx, geography))) throw new ConvexError("Pick a geography from the list.");
     const text = clean(summary, 12000) ?? "";
     if (submit && text.length < 20) throw new ConvexError("Write a few lines before sending.");
     const now = Date.now();
@@ -84,6 +86,8 @@ export const setStatus = mutation({
     if (!report) throw new ConvexError("That report was deleted.");
     if (report.status === "draft") throw new ConvexError("This report hasn't been sent yet.");
     await ctx.db.patch(id, { status, reviewedBy: me._id, reviewedAt: Date.now() });
+    const author = await ctx.db.get(report.authorId);
+    await audit(ctx, me, status === "reviewed" ? "report.reviewed" : "report.returned", { id, name: author?.name }, `${report.geography}, cycle ${report.cycle}`);
     const geo = await ctx.db.query("geographies").withIndex("by_key", (q) => q.eq("key", report.geography)).unique();
     await notify(
       ctx, report.authorId, me, "report_status",
@@ -103,31 +107,31 @@ export const forReview = query({
       : await ctx.db.query("reports").withIndex("by_cycle", (q) => q.eq("cycle", cycle)).collect();
     const sent = rows.filter((r) => r.status !== "draft");
     sent.sort((a, b) => (b.submittedAt ?? 0) - (a.submittedAt ?? 0));
+    const name = nameResolver(ctx);
     return await Promise.all(
       sent.map(async (r) => ({
         ...r,
-        authorName: (await ctx.db.get(r.authorId))?.name ?? "Former member",
+        authorName: await name(r.authorId),
         comments: await commentCount(ctx, r._id),
       })),
     );
   },
 });
 
-/** One report with its thread. Visible to its author and to managers. */
+/** One report with its thread. Drafts are visible to their author only; sent reports also to managers. */
 export const get = query({
   args: { id: v.id("reports") },
   handler: async (ctx, { id }) => {
     const me = await requireMember(ctx);
     const report = await ctx.db.get(id);
     if (!report) return null;
-    if (report.authorId !== me._id && !isLead(me)) return null;
-    const author = await ctx.db.get(report.authorId);
-    const reviewer = report.reviewedBy ? await ctx.db.get(report.reviewedBy) : null;
+    if (report.authorId !== me._id && (!isLead(me) || report.status === "draft")) return null;
+    const name = nameResolver(ctx);
     const thread = await ctx.db.query("comments").withIndex("by_report", (q) => q.eq("reportId", id)).collect();
     const comments = await Promise.all(
-      thread.map(async (c) => ({ ...c, authorName: (await ctx.db.get(c.authorId))?.name ?? "Former member", mine: c.authorId === me._id })),
+      thread.map(async (c) => ({ ...c, authorName: await name(c.authorId), mine: c.authorId === me._id })),
     );
-    return { ...report, authorName: author?.name ?? "Former member", reviewerName: reviewer?.name, comments };
+    return { ...report, authorName: await name(report.authorId), reviewerName: report.reviewedBy ? await name(report.reviewedBy) : undefined, comments };
   },
 });
 
@@ -137,7 +141,9 @@ export const comment = mutation({
     const me = await requireMember(ctx);
     const report = await ctx.db.get(reportId);
     if (!report) throw new ConvexError("That report was deleted.");
-    if (report.authorId !== me._id && !isLead(me)) throw new ConvexError("You can't comment on this report.");
+    if (report.authorId !== me._id && (!isLead(me) || report.status === "draft")) {
+      throw new ConvexError("You can't comment on this report.");
+    }
     const text = clean(body, 4000);
     if (!text) throw new ConvexError("Write a comment first.");
     await ctx.db.insert("comments", { reportId, authorId: me._id, body: text, createdAt: Date.now() });

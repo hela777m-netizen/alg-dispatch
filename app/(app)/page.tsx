@@ -8,6 +8,7 @@ import { api } from "@/convex/_generated/api";
 import { useApp } from "@/components/AppContext";
 import CycleRibbon from "@/components/CycleRibbon";
 import EntryList from "@/components/EntryList";
+import AvailabilityPanel from "@/components/Availability";
 import WorldMap from "@/components/WorldMap";
 import { PresenceTag } from "@/components/Presence";
 import { Empty, KindMark, Mix, Spark, StageTrack, Status } from "@/components/bits";
@@ -87,6 +88,7 @@ function Overview() {
               </Link>
             ))}
           </div>
+          <AvailabilityPanel />
         </section>
       )}
 
@@ -117,7 +119,7 @@ function Overview() {
               <Link key={g.key} href={`/geo/${g.key}`} className="geo-row">
                 <div>
                   <div className="geo-name">{g.name}</div>
-                  <div className="geo-time">{g.region}, {localTime(g.timezone, now)}</div>
+                  <div className="geo-time">{g.office ? `${g.region}, ${localTime(g.timezone, now)}` : "Market, no ALG office"}</div>
                 </div>
                 <div className="geo-total">
                   <span className="num">{g.total}</span>

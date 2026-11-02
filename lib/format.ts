@@ -96,5 +96,9 @@ export function timeAgo(ms: number, now: number = Date.now()): string {
 export function errorText(err: unknown): string {
   const data = (err as { data?: unknown })?.data;
   if (typeof data === "string") return data;
-  return "Something went wrong. Try again.";
+  // Unexpected server errors carry a request ID; show it so support can find the log line.
+  const msg = err instanceof Error ? err.message : "";
+  const ref = msg.match(/Request ID: ([\w-]+)/)?.[1];
+  if (/connection|network|failed to fetch/i.test(msg)) return "Can't reach the server. Check your connection; nothing was saved.";
+  return ref ? `Something went wrong (ref ${ref}). Try again; if it repeats, send the reference to the administrator.` : "Something went wrong. Try again.";
 }

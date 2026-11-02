@@ -18,6 +18,8 @@ const entryFields = {
   dealStage: v.optional(stageValidator),
   dealValue: v.optional(v.number()),
   date: v.string(),
+  startTime: v.optional(v.string()),
+  endTime: v.optional(v.string()),
 };
 
 type EntryInput = {
@@ -29,6 +31,8 @@ type EntryInput = {
   dealStage?: Doc<"entries">["dealStage"];
   dealValue?: number;
   date: string;
+  startTime?: string;
+  endTime?: string;
 };
 
 function normalise(input: EntryInput, anchor: string) {
@@ -39,6 +43,16 @@ function normalise(input: EntryInput, anchor: string) {
   const value = isDeal && input.dealValue !== undefined && Number.isFinite(input.dealValue) && input.dealValue >= 0
     ? Math.round(input.dealValue * 100) / 100
     : undefined;
+  const time = (t?: string) => {
+    const x = t?.trim();
+    if (!x) return undefined;
+    if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(x)) throw new ConvexError("Use a time like 14:00.");
+    return x;
+  };
+  const startTime = time(input.startTime);
+  let endTime = time(input.endTime);
+  if (endTime && !startTime) throw new ConvexError("Add a start time before the end time.");
+  if (startTime && endTime && endTime <= startTime) endTime = undefined;
   return {
     kind: input.kind,
     title,
@@ -47,6 +61,8 @@ function normalise(input: EntryInput, anchor: string) {
     dealStage: isDeal ? (input.dealStage ?? "lead") : undefined,
     dealValue: value,
     date: input.date,
+    startTime,
+    endTime,
     cycle: cycleOf(input.date, anchor),
   };
 }

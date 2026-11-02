@@ -22,6 +22,7 @@ import type * as lib_cycles from "../lib/cycles.js";
 import type * as lib_notify from "../lib/notify.js";
 import type * as lib_people from "../lib/people.js";
 import type * as lib_presence from "../lib/presence.js";
+import type * as lib_wording from "../lib/wording.js";
 import type * as members from "../members.js";
 import type * as notifications from "../notifications.js";
 import type * as reports from "../reports.js";
@@ -43,6 +44,7 @@ declare const fullApi: ApiFromModules<{
   "lib/notify": typeof lib_notify;
   "lib/people": typeof lib_people;
   "lib/presence": typeof lib_presence;
+  "lib/wording": typeof lib_wording;
   members: typeof members;
   notifications: typeof notifications;
   reports: typeof reports;

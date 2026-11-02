@@ -14,6 +14,8 @@ export type EntryDraft = {
   dealStage?: Stage;
   dealValue?: number;
   date: string;
+  startTime?: string;
+  endTime?: string;
 };
 
 export function blankDraft(geography: string, date: string): EntryDraft {
@@ -31,6 +33,8 @@ export function tidy(d: EntryDraft): EntryDraft {
     dealStage: d.kind === "deal" ? (d.dealStage ?? "lead") : undefined,
     dealValue: d.kind === "deal" && d.dealValue !== undefined && !Number.isNaN(d.dealValue) ? d.dealValue : undefined,
     date: d.date,
+    startTime: d.startTime || undefined,
+    endTime: d.startTime && d.endTime ? d.endTime : undefined,
   };
 }
 
@@ -106,7 +110,7 @@ export default function EntryForm({ value, onChange, idPrefix }: { value: EntryD
         ))}
       </div>
       <label className="field">
-        <span>{value.kind === "deal" ? "Deal or company" : "Headline"}</span>
+        <span>{value.kind === "deal" ? "Deal or company" : value.kind === "event" ? "Event name" : "Headline"}</span>
         <input id={`${idPrefix}-title`} className="input" value={value.title} maxLength={200} onChange={(e) => set("title", e.target.value)} />
       </label>
       <label className="field">
@@ -119,8 +123,20 @@ export default function EntryForm({ value, onChange, idPrefix }: { value: EntryD
           <span>Date</span>
           <input type="date" className="input" value={value.date} onChange={(e) => set("date", e.target.value)} />
         </label>
+        {(value.kind === "meeting" || value.kind === "event" || value.startTime) && (
+          <>
+            <label className="field">
+              <span>Start time, optional</span>
+              <input type="time" className="input" value={value.startTime ?? ""} onChange={(e) => set("startTime", e.target.value || undefined)} />
+            </label>
+            <label className="field">
+              <span>End time, optional</span>
+              <input type="time" className="input" value={value.endTime ?? ""} disabled={!value.startTime} onChange={(e) => set("endTime", e.target.value || undefined)} />
+            </label>
+          </>
+        )}
         <label className="field">
-          <span>Counterparty</span>
+          <span>{value.kind === "event" ? "Venue or organiser" : "Counterparty"}</span>
           <input className="input" value={value.counterparty ?? ""} onChange={(e) => set("counterparty", e.target.value)} />
         </label>
         {value.kind === "deal" && (

@@ -14,6 +14,7 @@ export const kindValidator = v.union(
   v.literal("blocker"),
   v.literal("ask"),
   v.literal("next"),
+  v.literal("event"),
 );
 
 export const stageValidator = v.union(
@@ -98,6 +99,8 @@ export default defineSchema({
     dealStage: v.optional(stageValidator),
     dealValue: v.optional(v.number()), // USD millions
     date: v.string(), // YYYY-MM-DD
+    startTime: v.optional(v.string()), // HH:MM, optional
+    endTime: v.optional(v.string()), // HH:MM, optional
     cycle: v.number(),
     source: v.union(v.literal("typed"), v.literal("voice")),
     editedBy: v.optional(v.id("members")),

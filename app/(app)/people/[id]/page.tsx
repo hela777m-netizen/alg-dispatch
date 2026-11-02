@@ -9,6 +9,7 @@ import { useApp } from "@/components/AppContext";
 import EntryList from "@/components/EntryList";
 import { Empty, Status } from "@/components/bits";
 import { MyPresence, PresenceTag } from "@/components/Presence";
+import WordDownload from "@/components/WordDownload";
 import { cycleRange } from "@/convex/lib/cycles";
 import { rangeLabel } from "@/lib/format";
 
@@ -69,7 +70,12 @@ export default function PersonPage({ params }: { params: Promise<{ id: string }>
           </section>
         </div>
         <section>
-          <div className="section-head"><h2 className="h2">Reports</h2></div>
+          <div className="section-head">
+            <h2 className="h2">Reports</h2>
+            {(isMe || member.role !== "reporter") && (thisCycle?.length ?? 0) > 0 && (
+              <WordDownload cycle={currentCycle} memberId={person._id} label="Word report, this cycle" />
+            )}
+          </div>
           <div className="panel">
             {person.reports.length === 0 ? (
               <p className="muted" style={{ margin: 0 }}>No reports sent yet.</p>

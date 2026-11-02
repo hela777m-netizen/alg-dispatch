@@ -1,4 +1,4 @@
-export const KINDS = ["activity", "meeting", "deal", "blocker", "ask", "next"] as const;
+export const KINDS = ["activity", "meeting", "deal", "event", "blocker", "ask", "next"] as const;
 export type Kind = (typeof KINDS)[number];
 
 export const KIND_LABEL: Record<Kind, string> = {
@@ -8,6 +8,7 @@ export const KIND_LABEL: Record<Kind, string> = {
   blocker: "Blocker",
   ask: "Ask of HQ",
   next: "Next two weeks",
+  event: "Event",
 };
 
 export const STAGES = ["lead", "engaged", "diligence", "terms", "closing", "closed", "lost"] as const;

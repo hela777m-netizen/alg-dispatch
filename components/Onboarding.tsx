@@ -52,8 +52,9 @@ export default function Onboarding() {
         <img src="/alliwan-arch-white.png" alt="" aria-hidden="true" className="welcome-arch" />
         <div style={{ position: "relative" }}>
           <Logo height={52} onDark />
-          <p className="welcome-kicker">Reporting Dashboard</p>
-          <h1 className="welcome-title">Welcome to Al Liwan,<br />{first}.</h1>
+          <p className="welcome-kicker">Al Liwan Reporting Dashboard</p>
+          <h1 className="welcome-title">Welcome to your reporting tool,<br />{first}.</h1>
+          <p className="welcome-catch">Less time writing reports. More time closing deals.</p>
         </div>
         <ul className="welcome-points">
           <li><b>Log as you go.</b> Type, talk it through, or upload a report you already have.</li>

@@ -520,14 +520,38 @@ export const invite = action({
     if (target.error || !target.email) throw new ConvexError(target.error ?? "Couldn't send the invitation.");
     const secret = process.env.CLERK_SECRET_KEY;
     if (!secret) throw new ConvexError("Invitations aren't set up yet (ref INVITE-CONFIG). Contact the technical maintainer.");
-    const res = await fetch("https://api.clerk.com/v1/invitations", {
+    const clerk = (path: string, init: RequestInit = {}) =>
+      fetch(`https://api.clerk.com/v1${path}`, {
+        ...init,
+        headers: { Authorization: `Bearer ${secret}`, "Content-Type": "application/json", ...(init.headers ?? {}) },
+      });
+    const email = target.email;
+
+    // 1. Someone who already has a login doesn't need an invitation: the sign-up page would only
+    //    tell them the email is taken. They just sign in.
+    const existing = await clerk(`/users?email_address=${encodeURIComponent(email)}&limit=1`);
+    if (existing.ok && ((await existing.json()) as unknown[]).length > 0) {
+      throw new ConvexError(`${email} already has a login, so no invitation is needed. Ask ${target.name} to go to ${origin} and sign in with that email.`);
+    }
+
+    // 2. Resending: withdraw any invitation still waiting, so only the newest link works.
+    const pending = await clerk(`/invitations?status=pending&query=${encodeURIComponent(email)}&limit=20`);
+    if (pending.ok) {
+      const body = (await pending.json()) as { data?: { id: string; email_address: string }[] } | { id: string; email_address: string }[];
+      const rows = Array.isArray(body) ? body : body.data ?? [];
+      for (const inv of rows.filter((r) => r.email_address.toLowerCase() === email)) {
+        await clerk(`/invitations/${inv.id}/revoke`, { method: "POST" });
+      }
+    }
+
+    // 3. A fresh invitation. Not created if the email is already taken.
+    const res = await clerk("/invitations", {
       method: "POST",
-      headers: { Authorization: `Bearer ${secret}`, "Content-Type": "application/json" },
       body: JSON.stringify({
-        email_address: target.email,
+        email_address: email,
         redirect_url: `${origin}/sign-up`,
         notify: true,
-        ignore_existing: true,
+        ignore_existing: false,
         expires_in_days: 7,
       }),
     });
@@ -538,12 +562,12 @@ export const invite = action({
       } catch { /* not JSON */ }
       console.error(`[INVITE] Clerk invitation failed ${res.status} ${code}`);
       if (code === "form_identifier_exists" || code === "duplicate_record") {
-        throw new ConvexError(`${target.email} already has an account. Ask ${target.name} to sign in at ${origin} with that email.`);
+        throw new ConvexError(`${email} already has a login or a waiting invitation. Ask ${target.name} to go to ${origin} and sign in with that email.`);
       }
       throw new ConvexError(`The invitation couldn't be sent (ref INVITE-${res.status}). Try again in a minute.`);
     }
     await ctx.runMutation(internal.members.markInvited, { id });
-    return { email: target.email };
+    return { email };
   },
 });
 

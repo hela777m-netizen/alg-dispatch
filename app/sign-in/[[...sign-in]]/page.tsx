@@ -1,7 +1,12 @@
 import { SignIn } from "@clerk/nextjs";
+import { auth } from "@clerk/nextjs/server";
+import { redirect } from "next/navigation";
 import Logo from "@/components/Logo";
 
-export default function SignInPage() {
+export default async function SignInPage() {
+  // Someone already signed in can't use this form (Clerk shows nothing); send them into the dashboard.
+  const { userId } = await auth();
+  if (userId) redirect("/");
   return (
     <main className="signin">
       <section className="signin-art">

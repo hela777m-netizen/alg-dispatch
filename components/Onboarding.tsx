@@ -46,10 +46,8 @@ export default function Onboarding() {
   }
 
   return (
-    <main className="signin">
+    <main className="signin welcome-page">
       <section className="signin-art welcome-art">
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src="/alliwan-arch-white.png" alt="" aria-hidden="true" className="welcome-arch" />
         <div style={{ position: "relative" }}>
           <Logo height={52} onDark />
           <p className="welcome-kicker">Al Liwan Reporting Dashboard</p>

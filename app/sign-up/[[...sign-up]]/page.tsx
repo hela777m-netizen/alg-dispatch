@@ -10,10 +10,8 @@ export default async function SignUpPage() {
   const { userId } = await auth();
   if (userId) redirect("/");
   return (
-    <main className="signin">
+    <main className="signin welcome-page">
       <section className="signin-art welcome-art">
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src="/alliwan-arch-white.png" alt="" aria-hidden="true" className="welcome-arch" />
         <div style={{ position: "relative" }}>
           <Logo height={52} onDark />
           <div className="mark-word" style={{ marginTop: 40 }}>Reporting<br />Dashboard</div>

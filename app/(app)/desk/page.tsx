@@ -9,6 +9,7 @@ import EntryList from "@/components/EntryList";
 import { ReportSlot } from "@/components/Report";
 import { Status } from "@/components/bits";
 import { MyPresence } from "@/components/Presence";
+import WordDownload from "@/components/WordDownload";
 import { cycleRange } from "@/convex/lib/cycles";
 import { rangeLabel } from "@/lib/format";
 
@@ -52,6 +53,7 @@ export default function DeskPage() {
         <section className="stack" style={{ gap: 16 }}>
           <div className="section-head" style={{ marginBottom: 0 }}>
             <h2 className="h2">Biweekly report</h2>
+            {(mine?.length ?? 0) > 0 && <WordDownload cycle={cycle} />}
           </div>
           {slots === undefined && <p className="faint">Loading</p>}
           {slots?.length === 0 && (

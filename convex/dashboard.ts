@@ -4,7 +4,7 @@ import type { Doc } from "./_generated/dataModel";
 import { canSee, canSeeEntry, isLead, isOffice, requireMember } from "./lib/access";
 import { nameResolver } from "./lib/people";
 
-const KINDS = ["activity", "meeting", "deal", "blocker", "ask", "next"] as const;
+const KINDS = ["activity", "meeting", "deal", "event", "blocker", "ask", "next"] as const;
 const TREND_CYCLES = 6;
 
 /** The group picture for one cycle, scoped to what the viewer may see. */

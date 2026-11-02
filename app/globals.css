@@ -27,6 +27,7 @@
   --k-blocker: #b8304a;
   --k-ask: #a86a0b;
   --k-next: #807f7a;
+  --k-event: #4060c0;
 
   --display: "Inter Variable", "Inter", system-ui, sans-serif;
   --body: "Inter Variable", "Inter", system-ui, sans-serif;
@@ -69,6 +70,7 @@
     --k-blocker: #f08398;
     --k-ask: #e3b15a;
     --k-next: #a9b0bd;
+    --k-event: #8ea6f0;
     --map-land: #34425c;
     --map-border: #131d31;
     --map-ours: #2f4f8c;
@@ -171,6 +173,8 @@ button, input, textarea, select { font: inherit; color: inherit; }
 .page-head p { margin: 10px 0 0; max-width: 60ch; }
 .section { margin-top: 44px; }
 .section-head { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; margin-bottom: 14px; }
+.word-download { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; }
+.word-download .notice { margin: 0; max-width: 320px; text-align: right; }
 .grid-2 { display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr); gap: 28px; align-items: start; }
 @media (max-width: 1080px) { .grid-2 { grid-template-columns: 1fr; } }
 
@@ -265,6 +269,7 @@ button, input, textarea, select { font: inherit; color: inherit; }
 .kind.blocker { --k: var(--k-blocker); }
 .kind.ask { --k: var(--k-ask); }
 .kind.next { --k: var(--k-next); }
+.kind.event { --k: var(--k-event); }
 
 /* ---------- KPI strip ---------- */
 .kpis { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); border-top: 2px solid var(--brand); }

@@ -1,6 +1,8 @@
 import { v } from "convex/values";
 import { internalMutation, internalQuery } from "./_generated/server";
-import { currentMember, geographyExists, getAnchor, isOffice } from "./lib/access";
+import type { Doc } from "./_generated/dataModel";
+import { currentMember, geographyExists, getAnchor, isLead, isOffice } from "./lib/access";
+import { addDays, plainSpan, quarterOf, spanText, whenText } from "./lib/wording";
 import { audit } from "./lib/audit";
 import { cycleOf, cycleRange, todayISO } from "./lib/cycles";
 
@@ -71,5 +73,87 @@ export const logCall = internalMutation({
   handler: async (ctx, { action, size, ok, ref }) => {
     const me = await currentMember(ctx);
     await audit(ctx, me, `ai.${action}`, undefined, `${size} characters, ${ok ? "succeeded" : `failed${ref ? ` (ref ${ref})` : ""}`}`);
+  },
+});
+
+/**
+ * Everything the Word business update needs for one person and one cycle.
+ * The author gets their own; owner and managers can get anyone's. Drafts stay private to their author.
+ */
+export const businessUpdateData = internalQuery({
+  args: { memberId: v.optional(v.id("members")), cycle: v.number() },
+  handler: async (ctx, { memberId, cycle }) => {
+    const me = await currentMember(ctx);
+    if (!me) return null;
+    const target = memberId ? await ctx.db.get(memberId) : me;
+    if (!target) return null;
+    const own = target._id === me._id;
+    if (!own && !isLead(me)) return null;
+
+    const anchor = await getAnchor(ctx);
+    const range = cycleRange(cycle, anchor);
+    const today = todayISO();
+    // Mid-cycle, the report runs to today; for a past cycle, to its last day.
+    const ending = today >= range.start && today <= range.end ? today : range.end;
+
+    const geos = await ctx.db.query("geographies").collect();
+    const geoName = new Map(geos.map((g) => [g.key, g.name]));
+
+    const inCycle = await ctx.db
+      .query("entries")
+      .withIndex("by_author_cycle", (q) => q.eq("authorId", target._id).eq("cycle", cycle))
+      .collect();
+    // Events and plans dated in the next month count as upcoming, whichever cycle they sit in.
+    const horizon = addDays(ending, 31);
+    const ahead: Doc<"entries">[] = [];
+    for (let c = cycle + 1; c <= cycle + 3; c++) {
+      const rows = await ctx.db
+        .query("entries")
+        .withIndex("by_author_cycle", (q) => q.eq("authorId", target._id).eq("cycle", c))
+        .collect();
+      ahead.push(...rows.filter((e) => (e.kind === "event" || e.kind === "next") && e.date <= horizon));
+    }
+    const entries = [...inCycle, ...ahead].sort((a, b) => a.date.localeCompare(b.date) || (a.startTime ?? "").localeCompare(b.startTime ?? ""));
+
+    const reports = (await ctx.db
+      .query("reports")
+      .withIndex("by_author_cycle_geo", (q) => q.eq("authorId", target._id).eq("cycle", cycle))
+      .collect())
+      .filter((r) => own || r.status !== "draft")
+      .filter((r) => r.summary.trim());
+
+    const plans = await ctx.db.query("availability").withIndex("by_member", (q) => q.eq("memberId", target._id)).collect();
+    const quarter = quarterOf(ending);
+    const travel = plans
+      .filter((p) => p.kind === "travel" && p.end >= range.start && p.start <= addDays(ending, 14))
+      .sort((a, b) => a.start.localeCompare(b.start))
+      .map((p) => ({ lead: `${p.place ?? "Travel"} (${spanText(p.start, p.end)}).`, text: p.note ?? "" }));
+    const leave = plans
+      .filter((p) => p.kind === "leave" && p.end >= ending && p.start <= quarter.end)
+      .sort((a, b) => a.start.localeCompare(b.start))
+      .map((p) => `Annual leave: ${plainSpan(p.start, p.end)}.`);
+
+    return {
+      requesterIsOwner: me.role === "owner",
+      name: target.name,
+      title: target.title ?? "",
+      range,
+      ending,
+      quarter: quarter.label,
+      entries: entries.map((e) => ({
+        kind: e.kind,
+        upcoming: e.date > ending,
+        geography: geoName.get(e.geography) ?? e.geography,
+        when: whenText(e.date, e.startTime, e.endTime),
+        title: e.title,
+        details: e.details,
+        counterparty: e.counterparty,
+        dealStage: e.dealStage,
+        dealValue: e.dealValue,
+      })),
+      reports: reports.map((r) => ({ geography: geoName.get(r.geography) ?? r.geography, status: r.status, text: r.summary })),
+      travel,
+      leave,
+    };
   },
 });

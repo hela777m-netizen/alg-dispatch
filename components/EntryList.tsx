@@ -76,7 +76,7 @@ function Row({ entry, showAuthor, showGeo }: { entry: Entry; showAuthor: boolean
 
   return (
     <div className="item">
-      <div className="when meta">{shortDate(entry.date)}</div>
+      <div className="when meta">{shortDate(entry.date)}{entry.startTime && <><br />{entry.startTime}{entry.endTime ? ` to ${entry.endTime}` : ""}</>}</div>
       <div>
         <div className="title">{entry.title}</div>
         {entry.details && <p className="details">{entry.details}</p>}
@@ -121,6 +121,8 @@ function Row({ entry, showAuthor, showGeo }: { entry: Entry; showAuthor: boolean
                 dealStage: entry.dealStage,
                 dealValue: entry.dealValue,
                 date: entry.date,
+                startTime: entry.startTime,
+                endTime: entry.endTime,
               })
             }
           >

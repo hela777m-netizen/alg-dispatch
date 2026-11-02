@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import schema from "../convex/schema";
 import { api, internal } from "../convex/_generated/api";
 import { cycleOf, cycleRange, todayISO } from "../convex/lib/cycles";
+import { addDays } from "../convex/lib/wording";
 
 const modules = import.meta.glob(["../convex/**/*.ts", "../convex/_generated/*.js", "!../convex/**/*.d.ts"]);
 
@@ -563,5 +564,98 @@ describe("first sign-in walkthrough", () => {
     // Confirming unchanged details doesn't alert the owner.
     await c.us2.mutation(api.members.completeOnboarding, { geographies: ["new-york"] });
     expect((await c.owner.query(api.notifications.list, {})).length).toBe(0);
+  });
+});
+
+describe("Word business update", () => {
+  let c: Ctx;
+  beforeEach(async () => { c = await setup(); });
+  afterEach(() => { vi.unstubAllGlobals(); delete process.env.ANTHROPIC_API_KEY; });
+
+  test("events and times are stored, checked and optional", async () => {
+    const [id] = await c.ksa.mutation(api.entries.addMany, {
+      entries: [entry("ksa", "Catch-up with the GM", { kind: "meeting", startTime: "14:00", endTime: "15:00" })], source: "typed",
+    });
+    const rows = await c.ksa.query(api.entries.forCycle, { cycle: cycleOf(today), mineOnly: true });
+    expect(rows.find((r) => r._id === id)).toMatchObject({ startTime: "14:00", endTime: "15:00" });
+    await c.ksa.mutation(api.entries.addMany, { entries: [entry("ksa", "Wealth forum", { kind: "event" })], source: "typed" });
+    await expect(c.ksa.mutation(api.entries.addMany, { entries: [entry("ksa", "Bad", { startTime: "25:00" })], source: "typed" })).rejects.toThrow(/14:00/);
+    await expect(c.ksa.mutation(api.entries.addMany, { entries: [entry("ksa", "Bad", { endTime: "10:00" })], source: "typed" })).rejects.toThrow(/start time/);
+  });
+
+  test("own update includes drafts, travel, leave and upcoming events; managers get sent reports only; reporters get no one else's", async () => {
+    const cy = cycleOf(today);
+    await c.ksa.mutation(api.entries.addMany, { entries: [entry("ksa", "Board call", { kind: "meeting", startTime: "09:30" })], source: "typed" });
+    await c.ksa.mutation(api.entries.addMany, { entries: [entry("ksa", "Wealth forum", { kind: "event", date: addDays(cycleRange(cy).end, 5) })], source: "typed" });
+    await c.ksa.mutation(api.reports.save, { geography: "ksa", cycle: cy, summary: "Private draft wording", submit: false });
+    await c.ksa.mutation(api.availability.save, { kind: "travel", start: today, end: addDays(today, 1), place: "Cairo", note: "Workshop" });
+    await c.ksa.mutation(api.availability.save, { kind: "leave", start: addDays(today, 3), end: addDays(today, 4) });
+
+    const own = await c.ksa.query(internal.aiData.businessUpdateData, { cycle: cy });
+    expect(own?.name).toBe("Reporter KSA");
+    expect(own?.entries.map((e) => [e.title, e.upcoming])).toEqual([["Board call", false], ["Wealth forum", true]]);
+    expect(own?.entries[0].when).toMatch(/^[A-Z][a-z]+day \d+ [A-Z][a-z]+, 09:30$/);
+    expect(own?.reports.map((r) => r.text)).toEqual(["Private draft wording"]);
+    expect(own?.travel[0].lead).toMatch(/^Cairo \(/);
+    expect(own?.leave[0]).toMatch(/^Annual leave: /);
+
+    const ksaId = (await c.owner.query(api.members.list, {})).find((m) => m.name === "Reporter KSA")!._id;
+    const asManager = await c.manager.query(internal.aiData.businessUpdateData, { memberId: ksaId, cycle: cy });
+    expect(asManager?.entries.length).toBe(2);
+    expect(asManager?.reports).toEqual([]);
+    expect(await c.us1.query(internal.aiData.businessUpdateData, { memberId: ksaId, cycle: cy })).toBeNull();
+    await expect(c.us1.action(api.ai.businessUpdate, { memberId: ksaId, cycle: cy })).rejects.toThrow(/your own/);
+  });
+
+  test("Claude's answer is shaped into the report; travel and leave come from plans; the call is logged without text", async () => {
+    process.env.ANTHROPIC_API_KEY = "test-key";
+    const cy = cycleOf(today);
+    await c.ksa.mutation(api.entries.addMany, { entries: [entry("ksa", "Confidential project Falcon", { kind: "deal" })], source: "typed" });
+    await c.ksa.mutation(api.availability.save, { kind: "travel", start: today, end: today, place: "Riyadh" });
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({
+      content: [{ type: "tool_use", name: "write_update", input: {
+        keyWins: [{ lead: "Falcon.", text: "Moved to terms." }],
+        issues: [],
+        workstreams: [{ heading: "Saudi Arabia: ALG Middle East", items: [{ lead: "Falcon (Monday 2 November).", text: "Terms agreed.", subpoints: ["Close by December."] }] }, { heading: "", items: [] }],
+        priorities: ["Close Falcon."],
+        events: [],
+      } }],
+    }), { status: 200 })));
+    const u = await c.ksa.action(api.ai.businessUpdate, { cycle: cy });
+    expect(u.workstreams).toHaveLength(1);
+    expect(u.workstreams[0].items[0].subpoints).toEqual(["Close by December."]);
+    expect(u.travel[0].lead).toMatch(/^Riyadh \(/);
+    const log = (await c.owner.query(api.members.history, {})).filter((r) => r.action === "ai.businessUpdate");
+    expect(log.length).toBe(1);
+    expect(JSON.stringify(log)).not.toContain("Falcon");
+  });
+
+  test("Word body follows the template headings and escapes text", async () => {
+    const { bodyXml, fileName } = await import("../lib/businessUpdateDocx");
+    const u = {
+      name: "Reporter KSA", title: "Head of KSA", ending: "2026-10-29", quarter: "Q4",
+      keyWins: [], issues: [{ lead: "Funding.", text: "Needs R&D <sign-off>." }],
+      workstreams: [{ heading: "Internal", items: [{ lead: "Workshop (Thursday 22 October).", text: "Attended.", subpoints: [] }] }],
+      priorities: [], events: [], travel: [], leave: ["Annual leave: 21 December 2026 to 2 January 2027."],
+    };
+    const xml = bodyXml(u);
+    for (const h of ["Bi-Weekly Business Update: Reporter KSA 261029", "Executive Summary", "Key wins", "Issues and Blockers", "Business Updates", "Next two weeks", "Business Priorities", "Upcoming Leave (Q4)", "Two weeks ending 29/10/2026"]) {
+      expect(xml).toContain(h);
+    }
+    expect(xml).not.toContain("Business Events");
+    expect(xml).toContain("R&amp;D &lt;sign-off&gt;");
+    expect(fileName(u)).toBe("Reporter_KSA_Business_Update.261029.docx");
+  });
+});
+
+describe("date wording", () => {
+  test("matches the house style", async () => {
+    const w = await import("../convex/lib/wording");
+    expect(w.whenText("2026-10-20", "14:00", "15:00")).toBe("Tuesday 20 October, 14:00 to 15:00");
+    expect(w.spanText("2026-10-28", "2026-10-29")).toBe("Wednesday 28 to Thursday 29 October");
+    expect(w.spanText("2026-10-30", "2026-11-02")).toBe("Friday 30 October to Monday 2 November");
+    expect(w.plainSpan("2026-12-21", "2027-01-02")).toBe("21 December 2026 to 2 January 2027");
+    expect(w.quarterOf("2026-10-29")).toEqual({ label: "Q4", end: "2026-12-31" });
+    expect(w.stamp("2026-10-29")).toBe("261029");
   });
 });
